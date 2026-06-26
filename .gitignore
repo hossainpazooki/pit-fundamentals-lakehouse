@@ -1,0 +1,15 @@
+target/
+project/target/
+project/project/
+.bsp/
+*.class
+metastore_db/
+derby.log
+spark-warehouse/
+.idea/
+data/
+*.local.conf
+
+# Internal build-process artifacts — local only, invisible to a fresh clone
+# (plan, build directive, contract, spike result). Scrub-or-publish deliberately.
+docs/superpowers/
