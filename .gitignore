@@ -9,6 +9,8 @@ spark-warehouse/
 .idea/
 data/
 *.local.conf
+*.log
+null/
 
 # Internal build-process artifacts — local only, invisible to a fresh clone
 # (plan, build directive, contract, spike result). Scrub-or-publish deliberately.

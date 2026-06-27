@@ -1,13 +1,21 @@
 package pit.support
 
-import java.sql.Timestamp
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.SparkSession
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import java.sql.Timestamp
 
 object Fixtures {
   final case class Filing(
-      adsh: String, cik: Long, tag: String, ddate: Int, qtrs: Int,
-      value: java.math.BigDecimal, accepted: String, ingest: String)
+      adsh: String,
+      cik: Long,
+      tag: String,
+      ddate: Int,
+      qtrs: Int,
+      value: java.math.BigDecimal,
+      accepted: String,
+      ingest: String
+  )
 
   def numDf(spark: SparkSession, fs: Seq[Filing]): DataFrame = {
     import spark.implicits._

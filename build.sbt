@@ -6,9 +6,13 @@ val sparkV = "3.5.1"
 val deltaV = "3.2.0"
 val deequV = "2.0.7-spark-3.5"
 
+// Scalafix OrganizeImports (removeUnused = true by default) needs the compiler
+// to flag unused imports; -Ywarn-unused-import is the 2.12 switch for that.
+ThisBuild / scalacOptions += "-Ywarn-unused-import"
+
 lazy val root = (project in file("."))
   .settings(
-    name := "pit-fundamentals-lakehouse",
+    name := "vantage",
     libraryDependencies ++= Seq(
       "org.apache.spark"      %% "spark-core"          % sparkV % Provided,
       "org.apache.spark"      %% "spark-sql"           % sparkV % Provided,

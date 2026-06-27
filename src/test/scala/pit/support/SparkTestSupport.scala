@@ -1,16 +1,20 @@
 package pit.support
 
+import org.apache.spark.sql.SparkSession
+import org.scalatest.BeforeAndAfterAll
+import org.scalatest.Suite
+
 import java.nio.file.Files
 
-import org.apache.spark.sql.SparkSession
-import org.scalatest.{BeforeAndAfterAll, Suite}
-
 trait SparkTestSupport extends BeforeAndAfterAll { self: Suite =>
-  @transient protected var spark: SparkSession = _
+  // Backing field is mutable for lifecycle; `spark` is a stable identifier so
+  // `import spark.implicits._` (which requires a stable path) resolves in specs.
+  @transient private var _spark: SparkSession = _
+  @transient protected lazy val spark: SparkSession = _spark
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    spark = SparkSession
+    _spark = SparkSession
       .builder()
       .appName("pit-test")
       .master("local[2]")
@@ -22,11 +26,11 @@ trait SparkTestSupport extends BeforeAndAfterAll { self: Suite =>
         "org.apache.spark.sql.delta.catalog.DeltaCatalog"
       )
       .getOrCreate()
-    spark.sparkContext.setLogLevel("ERROR")
+    _spark.sparkContext.setLogLevel("ERROR")
   }
 
   override def afterAll(): Unit = {
-    if (spark != null) spark.stop()
+    if (_spark != null) _spark.stop()
     super.afterAll()
   }
 

@@ -1,6 +1,7 @@
 package pit.config
 
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.Config
+import com.typesafe.config.ConfigFactory
 import pureconfig._
 import pureconfig.generic.auto._
 
