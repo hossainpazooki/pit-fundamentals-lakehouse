@@ -1,0 +1,17 @@
+# Normalize line endings to LF in the repo (portable across Windows-local and Linux).
+* text=auto eol=lf
+
+# Explicit text types
+*.scala text eol=lf
+*.sbt   text eol=lf
+*.conf  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+
+# Binaries — never touch
+*.jar binary
+*.exe binary
+*.dll binary
+*.zip binary
