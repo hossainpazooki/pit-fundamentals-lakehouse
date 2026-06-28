@@ -1,6 +1,6 @@
 ThisBuild / scalaVersion := "2.12.18"
 ThisBuild / organization := "pit"
-ThisBuild / version      := "0.1.0"
+ThisBuild / version := "0.1.0"
 
 val sparkV = "3.5.1"
 val deltaV = "3.2.0"
@@ -14,20 +14,20 @@ lazy val root = (project in file("."))
   .settings(
     name := "vantage",
     libraryDependencies ++= Seq(
-      "org.apache.spark"      %% "spark-core"          % sparkV % Provided,
-      "org.apache.spark"      %% "spark-sql"           % sparkV % Provided,
-      "io.delta"              %% "delta-spark"         % deltaV,
-      "com.amazon.deequ"       % "deequ"               % deequV,
-      "com.github.pureconfig" %% "pureconfig"          % "0.17.6",
-      "org.scalatest"         %% "scalatest"           % "3.2.18" % Test,
+      "org.apache.spark" %% "spark-core" % sparkV % Provided,
+      "org.apache.spark" %% "spark-sql" % sparkV % Provided,
+      "io.delta" %% "delta-spark" % deltaV,
+      "com.amazon.deequ" % "deequ" % deequV,
+      "com.github.pureconfig" %% "pureconfig" % "0.17.6",
+      "org.scalatest" %% "scalatest" % "3.2.18" % Test,
       // Spark needed at test runtime since main deps are Provided:
-      "org.apache.spark"      %% "spark-core"          % sparkV % Test,
-      "org.apache.spark"      %% "spark-sql"           % sparkV % Test
+      "org.apache.spark" %% "spark-core" % sparkV % Test,
+      "org.apache.spark" %% "spark-sql" % sparkV % Test
     ),
     // Deequ pulls a Spark transitively; keep ours authoritative.
     dependencyOverrides ++= Seq(
       "org.apache.spark" %% "spark-core" % sparkV,
-      "org.apache.spark" %% "spark-sql"  % sparkV
+      "org.apache.spark" %% "spark-sql" % sparkV
     ),
     Test / fork := true,
     Test / javaOptions ++= Seq(
@@ -41,11 +41,11 @@ lazy val root = (project in file("."))
     // commons-logging vs jcl-over-slf4j and Arrow's arrow-git.properties, and
     // would also drop Delta's DataSourceRegister (breaking format("delta")).
     assembly / assemblyMergeStrategy := {
-      case PathList("META-INF", "services", _ @ _*) => MergeStrategy.concat
-      case PathList("META-INF", _ @ _*)             => MergeStrategy.discard
-      case "module-info.class"                      => MergeStrategy.discard
-      case PathList("org", "apache", "commons", "logging", _ @ _*) => MergeStrategy.first
-      case "arrow-git.properties"                   => MergeStrategy.discard
+      case PathList("META-INF", "services", _ @_*) => MergeStrategy.concat
+      case PathList("META-INF", _ @_*) => MergeStrategy.discard
+      case "module-info.class" => MergeStrategy.discard
+      case PathList("org", "apache", "commons", "logging", _ @_*) => MergeStrategy.first
+      case "arrow-git.properties" => MergeStrategy.discard
       case x =>
         val old = (assembly / assemblyMergeStrategy).value
         old(x)

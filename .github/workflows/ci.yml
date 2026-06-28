@@ -1,0 +1,20 @@
+name: ci
+on:
+  push: { branches: [ main ] }
+  pull_request: { branches: [ main ] }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17', cache: sbt }
+      - uses: sbt/setup-sbt@v1
+      - name: Format check
+        run: sbt scalafmtCheckAll scalafmtSbtCheck
+      - name: Scalafix lint
+        run: sbt "scalafixAll --check"
+      - name: Test (unit transforms + the PIT / gate / batch-id property tests)
+        run: sbt test
+      - name: Assembly (fat jar)
+        run: sbt assembly

@@ -1,0 +1,29 @@
+bundle:
+  name: vantage
+
+variables:
+  source_dir:
+    description: DBFS/volume path to the SEC Financial Statement Data Set ZIPs
+
+resources:
+  jobs:
+    vantage_pipeline:
+      name: vantage-pipeline
+      tasks:
+        - task_key: run_pipeline
+          spark_jar_task:
+            main_class_name: pit.Pipeline
+            parameters: []
+          libraries:
+            - jar: ../target/scala-2.12/vantage-assembly-0.1.0.jar
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: m5d.large
+            num_workers: 2
+
+targets:
+  dev:
+    mode: development
+    default: true
+  prod:
+    mode: production
