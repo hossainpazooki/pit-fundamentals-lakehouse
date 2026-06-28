@@ -18,6 +18,26 @@ class DataQualityException(msg: String) extends RuntimeException(msg)
 
 object Pipeline {
 
+  /** Write the single-row `(batchId, reason)` provenance for an unevaluable batch, then fail closed.
+    * Different from the row/detail quarantine schemas, so it gets its own Delta path -- one path with two
+    * schemas throws on the second write.
+    */
+  private def writeUnevaluableAndThrow(
+      spark: SparkSession,
+      cfg: AppConfig,
+      batchId: String,
+      reason: String
+  ): Nothing = {
+    import spark.implicits._
+    Seq((batchId, reason))
+      .toDF("batchId", "reason")
+      .write
+      .format("delta")
+      .mode("append")
+      .save(s"${cfg.paths.quarantineRoot}/unevaluable")
+    throw new DataQualityException(s"DQ gate unevaluable: $reason")
+  }
+
   /** Core stage path, frame-driven so it unit-tests without reading TSVs. */
   def runFromFrames(
       spark: SparkSession,
@@ -31,26 +51,26 @@ object Pipeline {
     // §6 precondition on the SOURCE: a missing required column must be Unevaluable, not masked
     // into a completeness Fail by castNum (which manufactures absent columns as typed nulls).
     DataQualityGate.requiredColumnsPresent(num, DataQualityGate.requiredNumCols).foreach { reason =>
-      throw new DataQualityException(s"DQ gate unevaluable: $reason")
+      writeUnevaluableAndThrow(spark, cfg, batchId, reason)
     }
     val casted = SilverTransforms.castNum(num)
     val (valid, quarantine) =
       SilverTransforms.splitValidQuarantine(casted, Seq("adsh", "tag", "version", "ddate", "qtrs"))
     val quarantined = quarantine.count()
     if (quarantined > 0)
-      quarantine.write.format("delta").mode("append").save(cfg.paths.quarantineRoot)
+      quarantine.write.format("delta").mode("append").save(s"${cfg.paths.quarantineRoot}/rows")
 
     val outcome =
       DataQualityGate.gate(valid, DataQualityGate.silverNumContract, DataQualityGate.requiredNumCols)
     val gateLabel = outcome match {
       case Pass => "Pass"
       case Fail(detail) =>
-        detail.write.format("delta").mode("append").save(cfg.paths.quarantineRoot)
+        detail.write.format("delta").mode("append").save(s"${cfg.paths.quarantineRoot}/detail")
         throw new DataQualityException(
           "DQ gate failed: " + detail.take(50).map(_.toString).mkString("; ")
         )
       case Unevaluable(why) =>
-        throw new DataQualityException(s"DQ gate unevaluable: $why")
+        writeUnevaluableAndThrow(spark, cfg, batchId, why)
     }
 
     SilverMerge.upsert(spark, cfg.paths.silverRoot, valid)
@@ -71,10 +91,14 @@ object Pipeline {
       .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
       .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
       .getOrCreate()
-    try
-      // Full TSV read path: bronze ingest per quarter, then silver+gold.
-      // (Read/audit/registry wiring uses BronzeIngest + BatchRegistry from Tasks 4-5.)
-      println("pipeline configured for quarters: " + cfg.ingest.quarters.mkString(","))
-    finally spark.stop()
+    try {
+      val codeSha = sys.env.getOrElse("VANTAGE_CODE_SHA", "unknown")
+      val ingestTs = new java.sql.Timestamp(System.currentTimeMillis())
+      cfg.ingest.quarters.foreach { q =>
+        val r = pit.ingest.TsvIngest.ingestQuarter(spark, cfg, q, codeSha, ingestTs)
+        val m = runFromFrames(spark, cfg, r.num, r.sub, r.batchId, ingestTs)
+        println(m.asLogLine) // ASCII
+      }
+    } finally spark.stop()
   }
 }
