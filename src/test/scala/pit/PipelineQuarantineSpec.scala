@@ -58,8 +58,8 @@ class PipelineQuarantineSpec extends AnyFunSuite with SparkTestSupport {
       val cfg = cfgFor(root)
       import spark.implicits._
       // Bronze source WITHOUT the `value` column -> §6 source-presence precondition: Unevaluable.
-      val num = Seq(("a1", "Assets", "v1", 20230331, 1, "USD"))
-        .toDF("adsh", "tag", "version", "ddate", "qtrs", "uom")
+      val num = Seq(("a1", "Assets", "v1", 20230331, 1, "USD", "", ""))
+        .toDF("adsh", "tag", "version", "ddate", "qtrs", "uom", "segments", "coreg")
       val sub = Fixtures.subDf(
         spark,
         Seq(Filing("a1", 1, "Assets", 20230331, 1, bd("100"), "2023-05-01 12:00:00", "2023-05-02 00:00:00"))
@@ -72,6 +72,31 @@ class PipelineQuarantineSpec extends AnyFunSuite with SparkTestSupport {
       val uneval = spark.read.format("delta").load(s"${cfg.paths.quarantineRoot}/unevaluable")
       assert(uneval.columns.toSet == Set("batchId", "reason"))
       assert(uneval.filter(uneval("batchId") === "b-uneval").count() == 1L)
+    }
+  }
+
+  test("footnote-only rows (null value) go to quarantine/rows; the batch still passes") {
+    withTempDir { root =>
+      val cfg = cfgFor(root)
+      val filings = Seq(
+        Filing("a1", 1, "Assets", 20230331, 1, bd("100"), "2023-05-01 12:00:00", "2023-05-02 00:00:00"),
+        Filing("a1", 1, "Assets", 20230630, 1, null, "2023-05-01 12:00:00", "2023-05-02 00:00:00")
+      )
+      val m = Pipeline.runFromFrames(
+        spark,
+        cfg,
+        num = Fixtures.numDf(spark, filings),
+        sub = Fixtures.subDf(spark, filings.take(1)),
+        batchId = "b-nullval",
+        ingestTs = Timestamp.valueOf("2023-05-02 00:00:00")
+      )
+
+      assert(m.gateOutcome == "Pass", s"gate was ${m.gateOutcome}")
+      assert(m.quarantined == 1L)
+      val rows = spark.read.format("delta").load(s"${cfg.paths.quarantineRoot}/rows")
+      assert(rows.count() == 1L)
+      val gold = spark.read.format("delta").load(cfg.paths.goldRoot)
+      assert(gold.count() == 1L, "gold must exclude the valueless row")
     }
   }
 }

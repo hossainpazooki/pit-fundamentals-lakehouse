@@ -12,7 +12,7 @@ class SchemasSpec extends AnyFunSuite {
   }
 
   test("declared num columns include the PIT-load-bearing fields") {
-    Seq("adsh", "tag", "version", "ddate", "qtrs", "value")
+    Seq("adsh", "tag", "version", "ddate", "qtrs", "uom", "segments", "coreg", "value")
       .foreach(c => assert(Schemas.numColumns.contains(c), s"missing $c"))
   }
 

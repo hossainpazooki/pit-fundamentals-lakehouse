@@ -18,8 +18,17 @@ final case class IngestCfg(quarters: List[String])
 final case class AppConfig(spark: SparkCfg, paths: PathsCfg, ingest: IngestCfg)
 
 object AppConfig {
-  def load(): AppConfig = load(ConfigFactory.load())
+  def load(): AppConfig = load(ConfigFactory.load(), sys.env.get("PIT_QUARTERS"))
 
-  def load(config: Config): AppConfig =
-    ConfigSource.fromConfig(config.getConfig("pit")).loadOrThrow[AppConfig]
+  /** `quartersOverride` is a comma-separated list (`"2026q1,2026q2"`), the PIT_QUARTERS env contract. It
+    * cannot ride HOCON's `${?PIT_QUARTERS}` substitution: that injects a STRING where the schema needs a
+    * list, and config load would fail.
+    */
+  def load(config: Config, quartersOverride: Option[String] = None): AppConfig = {
+    val base = ConfigSource.fromConfig(config.getConfig("pit")).loadOrThrow[AppConfig]
+    quartersOverride
+      .map(_.split(",").map(_.trim).filter(_.nonEmpty).toList)
+      .filter(_.nonEmpty)
+      .fold(base)(qs => base.copy(ingest = IngestCfg(qs)))
+  }
 }

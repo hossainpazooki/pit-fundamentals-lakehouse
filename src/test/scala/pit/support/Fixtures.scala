@@ -14,13 +14,17 @@ object Fixtures {
       qtrs: Int,
       value: java.math.BigDecimal,
       accepted: String,
-      ingest: String
+      ingest: String,
+      uom: String = "USD",
+      segments: String = "",
+      coreg: String = ""
   )
 
   def numDf(spark: SparkSession, fs: Seq[Filing]): DataFrame = {
     import spark.implicits._
-    fs.map(f => (f.adsh, f.tag, "v1", f.ddate, f.qtrs, f.value, Timestamp.valueOf(f.ingest)))
-      .toDF("adsh", "tag", "version", "ddate", "qtrs", "value", "_ingest_ts")
+    fs.map(f =>
+      (f.adsh, f.tag, "v1", f.ddate, f.qtrs, f.uom, f.segments, f.coreg, f.value, Timestamp.valueOf(f.ingest))
+    ).toDF("adsh", "tag", "version", "ddate", "qtrs", "uom", "segments", "coreg", "value", "_ingest_ts")
   }
 
   def subDf(spark: SparkSession, fs: Seq[Filing]): DataFrame = {

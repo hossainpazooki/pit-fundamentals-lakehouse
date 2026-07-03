@@ -8,6 +8,11 @@ what was **filed and accepted on or before D** — no lookahead, including acros
 restatements. A later correction to a prior period never leaks backward into an
 as-of-D answer.
 
+**Scope:** entity-level (consolidated, no-coregistrant) facts. Segment and
+coregistrant breakouts are excluded by design at the silver layer and counted in run
+metrics; within this scope the natural key `(adsh, tag, version, ddate, qtrs, uom)`
+is unique — measured, not assumed, on a real quarter (zero collisions on 2026q1).
+
 The name is the property, not an acronym: a *vantage point* can't see past the
 horizon of D.
 
@@ -70,7 +75,10 @@ The guarantees are pinned by property tests, not prose:
 | Gate returns `Unevaluable` on missing column / empty input; `Fail` on a violation | `DataQualityGateSpec` (§6) |
 | `as_of(D)` returns the original value for `T1 ≤ D < T2`, the restated value for `D ≥ T2` | `PitNoLookaheadSpec` (§7) |
 | The Gold temporal model is order-invariant (ingest order cannot change the Gold table) | `PitNoLookaheadSpec` (§7) |
-| Real TSV → bronze → silver → gold composes to a non-empty Gold; re-ingest is idempotent | `TsvIngestSpec` |
+| `uom` is part of the natural key: two units of one fact never collapse or restate each other | `PitNoLookaheadSpec`, `DataQualityGateSpec` |
+| Segment/coregistrant rows are scoped out of silver and gold, and counted | `PipelineSpec`, `TsvIngestSpec` |
+| Footnote-only rows (null `value`) quarantine to `/rows`; the batch still passes | `PipelineQuarantineSpec` |
+| SEC-format TSV → bronze → silver → gold composes to the exact entity-level Gold; re-ingest is idempotent | `TsvIngestSpec` |
 | Denied batches quarantine to distinct lanes without schema conflict | `PipelineQuarantineSpec` |
 
 ## Build & test
@@ -85,16 +93,28 @@ directory containing `winutils.exe` + `hadoop.dll`.
 
 ## Run
 
+`PIT_SOURCE_DIR` is the parent of quarter directories (`<source>/<quarter>/num.txt` +
+`sub.txt`, the layout of the unzipped [SEC Financial Statement Data
+Sets](https://www.sec.gov/dera/data/financial-statement-data-sets)); `PIT_QUARTERS` is
+a comma-separated quarter list.
+
 ```bash
-PIT_SOURCE_DIR=./data/2023q2 \
+PIT_SOURCE_DIR=./data PIT_QUARTERS=2026q1 \
 PIT_BRONZE_ROOT=./lake/bronze PIT_SILVER_ROOT=./lake/silver \
 PIT_GOLD_ROOT=./lake/gold PIT_QUARANTINE_ROOT=./lake/quarantine \
 PIT_REGISTRY_PATH=./lake/registry \
 spark-submit --class pit.Pipeline target/scala-2.12/vantage-assembly-*.jar
 ```
 
+The session timezone is pinned to `America/New_York` in the entrypoint: SEC `accepted`
+timestamps are US Eastern and zoneless, and parsing them in the machine's local zone
+would move the PIT boundary across machines.
+
 ## Limits
 
+- **Entity-level facts only** — segment and coregistrant breakouts are scoped out at
+  silver (counted, not quarantined). Modeling them as first-class dimensions is future
+  work, not a small extension: it changes the natural key.
 - Quarterly batch ingest; no streaming.
 - US-GAAP / XBRL scope; no IFRS or non-XBRL filers.
 - Tamper-evident, not attested — provenance stops at hash + time-travel, by design.
@@ -102,7 +122,20 @@ spark-submit --class pit.Pipeline target/scala-2.12/vantage-assembly-*.jar
 ## Status
 
 End-to-end: SEC TSVs → bronze → silver → gold, with both guards and the PIT model in
-place. **29 tests pass, and GitHub Actions runs the full suite + scalafmt/scalafix +
-fat-jar assembly on every push (green on `main`).** A Databricks Asset Bundle
-(`databricks.yml`) is configured for the native deploy path but not yet deployed to a
-workspace. Claims here are kept at or behind what the tests prove.
+place. **35 tests pass, and GitHub Actions runs the full suite + scalafmt/scalafix +
+fat-jar assembly on every push.**
+
+**Validated against a real quarter** (2026q1: 3,690,955 `num` rows, 6,169 filings).
+The run reconciles against raw-file counts exactly: 2,185,031 rows scoped out
+(segment/coregistrant), 41,517 footnote-only rows quarantined, 1,464,407 entity-level
+facts in Gold — with zero decimal-cast failures and zero rows lost in the `sub` join.
+Spot-checked against the raw filing: Apple's Q1 FY2026 10-Q (`0000320193-26-000006`,
+accepted 2026-01-30) reports revenue of 143,756,000,000 in Gold, byte-equal to the
+raw `num.txt` value. Before the entity-level scope existed, the DQ gate correctly
+**fail-closed on this same quarter** (66% natural-key collisions, 3.8% null values) —
+the refusal, its metrics recomputed from the raw file, is what drove the scope
+decision.
+
+A Databricks Asset Bundle (`databricks.yml`) is configured for the native deploy path
+but not yet deployed to a workspace. Claims here are kept at or behind what the tests
+and the real-quarter run prove.

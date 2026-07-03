@@ -9,8 +9,9 @@ import java.sql.Timestamp
 class SilverMergeSpec extends AnyFunSuite with SparkTestSupport {
   private def row(value: String, ingest: String) = {
     import spark.implicits._
-    Seq(("0001", "Assets", "v1", 20230331, 1, new java.math.BigDecimal(value), Timestamp.valueOf(ingest)))
-      .toDF("adsh", "tag", "version", "ddate", "qtrs", "value", "_ingest_ts")
+    Seq(
+      ("0001", "Assets", "v1", 20230331, 1, "USD", new java.math.BigDecimal(value), Timestamp.valueOf(ingest))
+    ).toDF("adsh", "tag", "version", "ddate", "qtrs", "uom", "value", "_ingest_ts")
   }
 
   test("latest _ingest_ts wins on the natural key; re-running is a no-op") {

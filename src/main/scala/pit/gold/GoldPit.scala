@@ -9,6 +9,10 @@ import java.sql.Timestamp
 object GoldPit {
   val MAX_SENTINEL: Timestamp = Timestamp.valueOf("9999-12-31 00:00:00")
 
+  // Natural key of an entity-level fact: `uom` is part of it (same tag can be reported in
+  // more than one unit); collapsing it would chain unrelated values into one interval set.
+  private val naturalKey = Seq("cik", "tag", "ddate", "qtrs", "uom")
+
   /** Validity intervals ordered STRICTLY by `accepted` (the SEC timestamp), never by `_ingest_ts`. Ordering
     * by ingest order would leak lookahead.
     */
@@ -21,12 +25,13 @@ object GoldPit {
         col("n.tag").as("tag"),
         col("n.ddate").as("ddate"),
         col("n.qtrs").as("qtrs"),
+        col("n.uom").as("uom"),
         col("n.value").as("value"),
         col("s.accepted").as("accepted")
       )
 
     val byAccepted =
-      Window.partitionBy("cik", "tag", "ddate", "qtrs").orderBy(col("accepted").asc)
+      Window.partitionBy(naturalKey.map(col): _*).orderBy(col("accepted").asc)
 
     joined
       .withColumn("valid_from", col("accepted"))
@@ -39,7 +44,7 @@ object GoldPit {
   /** "Fundamentals as of D": accepted <= D, latest restatement per natural key. */
   def asOf(gold: DataFrame, d: Timestamp): DataFrame = {
     val byAcceptedDesc =
-      Window.partitionBy("cik", "tag", "ddate", "qtrs").orderBy(col("accepted").desc)
+      Window.partitionBy(naturalKey.map(col): _*).orderBy(col("accepted").desc)
     gold
       .filter(col("accepted") <= lit(d))
       .withColumn("_rn", row_number().over(byAcceptedDesc))

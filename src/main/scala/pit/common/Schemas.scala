@@ -10,8 +10,10 @@ object Schemas {
   val subColumns: Seq[String] =
     Seq("adsh", "cik", "name", "form", "period", "fy", "fp", "filed", "accepted")
 
+  // segments/coreg are read for the entity-level scope filter (silver keeps only rows where
+  // both are empty) and are not part of the typed silver schema.
   val numColumns: Seq[String] =
-    Seq("adsh", "tag", "version", "ddate", "qtrs", "uom", "value")
+    Seq("adsh", "tag", "version", "ddate", "qtrs", "uom", "segments", "coreg", "value")
 
   // Declared silver typed schemas (what casting targets).
   val subTyped: StructType = StructType(

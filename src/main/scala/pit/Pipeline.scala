@@ -50,12 +50,24 @@ object Pipeline {
     val rowsIn = num.count()
     // §6 precondition on the SOURCE: a missing required column must be Unevaluable, not masked
     // into a completeness Fail by castNum (which manufactures absent columns as typed nulls).
-    DataQualityGate.requiredColumnsPresent(num, DataQualityGate.requiredNumCols).foreach { reason =>
-      writeUnevaluableAndThrow(spark, cfg, batchId, reason)
-    }
-    val casted = SilverTransforms.castNum(num)
+    // The scope columns are required too: without them entity-level scope cannot be established.
+    DataQualityGate
+      .requiredColumnsPresent(num, DataQualityGate.requiredNumCols ++ DataQualityGate.scopeCols)
+      .foreach { reason =>
+        writeUnevaluableAndThrow(spark, cfg, batchId, reason)
+      }
+    // Entity-level scope: segment/coregistrant breakouts are excluded by design and counted
+    // in metrics, not quarantined (they are valid SEC rows outside VANTAGE's claim).
+    val (entity, scopedOutDf) = SilverTransforms.scopeEntityLevel(num)
+    val scopedOut = scopedOutDf.count()
+    val casted = SilverTransforms.castNum(entity)
+    // `value` is structural for a numeric fact store: footnote-only rows (null value) go to
+    // the rows lane rather than failing the whole batch on completeness.
     val (valid, quarantine) =
-      SilverTransforms.splitValidQuarantine(casted, Seq("adsh", "tag", "version", "ddate", "qtrs"))
+      SilverTransforms.splitValidQuarantine(
+        casted,
+        Seq("adsh", "tag", "version", "ddate", "qtrs", "uom", "value")
+      )
     val quarantined = quarantine.count()
     if (quarantined > 0)
       quarantine.write.format("delta").mode("append").save(s"${cfg.paths.quarantineRoot}/rows")
@@ -80,17 +92,31 @@ object Pipeline {
 
     val deltaVersion =
       io.delta.tables.DeltaTable.forPath(spark, cfg.paths.goldRoot).history(1).head().getAs[Long]("version")
-    RunMetrics(batchId, rowsIn, gold.count(), rowsIn - valid.count(), quarantined, gateLabel, deltaVersion)
+    RunMetrics(
+      batchId,
+      rowsIn,
+      gold.count(),
+      scopedOut,
+      rowsIn - scopedOut - valid.count(),
+      quarantined,
+      gateLabel,
+      deltaVersion
+    )
   }
 
   def main(args: Array[String]): Unit = {
     val cfg = AppConfig.load()
-    val spark = SparkSession
+    val builder = SparkSession
       .builder()
       .appName(cfg.spark.appName)
       .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
       .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-      .getOrCreate()
+      // SEC `accepted` timestamps are US Eastern and carry no zone; parsing them in the
+      // machine's local zone would move the PIT boundary across machines (found on the
+      // 2026q1 run, GATE-A record). Pin the session zone so ingest is zone-deterministic.
+      .config("spark.sql.session.timeZone", "America/New_York")
+    cfg.spark.master.foreach(builder.master) // absent on a cluster, where the runtime provides it
+    val spark = builder.getOrCreate()
     try {
       val codeSha = sys.env.getOrElse("VANTAGE_CODE_SHA", "unknown")
       val ingestTs = new java.sql.Timestamp(System.currentTimeMillis())

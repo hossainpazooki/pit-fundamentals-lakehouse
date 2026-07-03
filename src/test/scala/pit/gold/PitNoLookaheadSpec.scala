@@ -43,4 +43,13 @@ class PitNoLookaheadSpec extends AnyFunSuite with SparkTestSupport {
       assert(asOfValue(fwd, d) == asOfValue(rev, d), s"as_of($d) differs by load order")
     }
   }
+
+  test("uom is part of the natural key: two units of one fact do not collapse or restate each other") {
+    val usd = Filing("a1", 1, "Assets", 20230331, 1, bd("100"), T1, "2023-05-02 00:00:00")
+    val eur = Filing("a2", 1, "Assets", 20230331, 1, bd("92"), T2, "2023-08-02 00:00:00", uom = "EUR")
+    // If uom were absent from the key, the EUR filing would read as a restatement of the USD
+    // one and as_of(D >= T2) would return a single (wrong) row.
+    val out = GoldPit.asOf(gold(Seq(usd, eur)), Timestamp.valueOf("2023-09-01 00:00:00")).collect()
+    assert(out.length == 2, s"expected both units to survive, got ${out.length}")
+  }
 }

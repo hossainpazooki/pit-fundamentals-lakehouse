@@ -39,10 +39,12 @@ class TsvIngestSpec extends AnyFunSuite with SparkTestSupport {
   private def writeFixtures(root: String): Unit = {
     val q = Paths.get(s"$root/src/$quarter")
     Files.createDirectories(q)
+    // Header matches the real SEC num.txt column order; segments/coreg empty = entity-level.
     val num = Seq(
-      Seq("adsh", "tag", "version", "ddate", "qtrs", "uom", "value"),
-      Seq("a1", "Assets", "v1", "20230331", "1", "USD", "100"),
-      Seq("a2", "Assets", "v1", "20230331", "1", "USD", "150")
+      Seq("adsh", "tag", "version", "ddate", "qtrs", "uom", "segments", "coreg", "value"),
+      Seq("a1", "Assets", "v1", "20230331", "1", "USD", "", "", "100"),
+      Seq("a2", "Assets", "v1", "20230331", "1", "USD", "", "", "150"),
+      Seq("a2", "Assets", "v1", "20230331", "1", "USD", "Segment=US", "", "90")
     ).map(_.mkString("\t")).mkString("\n")
     val sub = Seq(
       Seq("adsh", "cik", "name", "form", "period", "fy", "fp", "filed", "accepted"),
@@ -65,7 +67,8 @@ class TsvIngestSpec extends AnyFunSuite with SparkTestSupport {
       assert(DeltaTable.isDeltaTable(spark, s"${cfg.paths.bronzeRoot}/num"))
       assert(DeltaTable.isDeltaTable(spark, s"${cfg.paths.bronzeRoot}/sub"))
       assert(r.num.columns.contains("_batch_id"))
-      assert(spark.read.format("delta").load(s"${cfg.paths.bronzeRoot}/num").count() == 2L)
+      // Bronze keeps ALL source rows, including the segment breakout; scoping happens at silver.
+      assert(spark.read.format("delta").load(s"${cfg.paths.bronzeRoot}/num").count() == 3L)
 
       // Batch is registered and resolvable by id.
       val rec = BatchRegistry.lookup(spark, cfg.paths.registryPath, r.batchId)
@@ -88,8 +91,8 @@ class TsvIngestSpec extends AnyFunSuite with SparkTestSupport {
       val second = TsvIngest.ingestQuarter(spark, cfg, quarter, "code-sha-1", ingestTs)
       val after = spark.read.format("delta").load(s"${cfg.paths.bronzeRoot}/num").count()
 
-      assert(first == 2L)
-      assert(after == 2L, s"re-ingest changed bronze count to $after")
+      assert(first == 3L)
+      assert(after == 3L, s"re-ingest changed bronze count to $after")
       // Same source bytes + schema + code + params -> same content-addressed id.
       assert(second.batchId == TsvIngest.ingestQuarter(spark, cfg, quarter, "code-sha-1", ingestTs).batchId)
     }
@@ -104,8 +107,9 @@ class TsvIngestSpec extends AnyFunSuite with SparkTestSupport {
       val m = Pipeline.runFromFrames(spark, cfg, r.num, r.sub, r.batchId, ingestTs)
 
       assert(m.gateOutcome == "Pass", s"gate was ${m.gateOutcome}")
+      assert(m.scopedOut == 1L, s"segment breakout not scoped out: ${m.asLogLine}")
       val gold = spark.read.format("delta").load(cfg.paths.goldRoot)
-      assert(gold.count() > 0L, "gold is empty")
+      assert(gold.count() == 2L, "gold must hold exactly the two entity-level facts")
     }
   }
 }

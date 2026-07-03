@@ -15,6 +15,20 @@ class SilverTransformsSpec extends AnyFunSuite with SparkTestSupport {
     assert(out.head().getAs[java.math.BigDecimal]("value").doubleValue() == 100.5)
   }
 
+  test("scopeEntityLevel keeps only rows with empty/null segments AND coreg, never drops") {
+    import spark.implicits._
+    val df = Seq(
+      ("a1", "", ""),
+      ("a2", null.asInstanceOf[String], null.asInstanceOf[String]),
+      ("a3", "Segment=US", ""),
+      ("a4", "", "SubCo")
+    ).toDF("adsh", "segments", "coreg")
+    val (entity, scopedOut) = SilverTransforms.scopeEntityLevel(df)
+    assert(entity.count() == 2L)
+    assert(scopedOut.count() == 2L)
+    assert(entity.count() + scopedOut.count() == df.count(), "no row silently dropped")
+  }
+
   test("splitValidQuarantine routes null-key rows to quarantine, never drops") {
     import spark.implicits._
     val df = Seq(

@@ -21,17 +21,29 @@ object DataQualityGate {
     Seq(
       "adsh" -> StringType,
       "tag" -> StringType,
+      "uom" -> StringType,
       "value" -> DecimalType(28, 4)
     )
   }
 
-  // Illustrative silver contract (§6).
+  // Source columns the entity-level scope filter needs; without them scope cannot be
+  // established, which is Unevaluable, not assumable. Name-presence only (bronze is
+  // all-String pre-cast).
+  val scopeCols: Seq[(String, DataType)] = {
+    import org.apache.spark.sql.types._
+    Seq("segments" -> StringType, "coreg" -> StringType)
+  }
+
+  // Silver contract (§6), calibrated on real SEC data (2026q1, GATE-A record): within the
+  // entity-level scope the natural key includes `uom` — without it 66% of a real quarter
+  // collides; with it, zero collisions measured.
   val silverNumContract: Check =
     Check(CheckLevel.Error, "silver-num")
       .isComplete("adsh")
       .isComplete("tag")
+      .isComplete("uom")
       .isComplete("value")
-      .hasUniqueness(Seq("adsh", "tag", "version", "ddate", "qtrs"), _ == 1.0)
+      .hasUniqueness(Seq("adsh", "tag", "version", "ddate", "qtrs", "uom"), _ == 1.0)
       .isNonNegative("qtrs")
 
   /** Fail-closed on unevaluable. Preconditions are checked BEFORE the suite, because Deequ will otherwise

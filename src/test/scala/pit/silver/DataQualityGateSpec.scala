@@ -7,13 +7,13 @@ import pit.support.SparkTestSupport
 
 class DataQualityGateSpec extends AnyFunSuite with SparkTestSupport {
 
-  private def numDf(rows: Seq[(String, String, String, Int, Int, java.math.BigDecimal)]) = {
+  private def numDf(rows: Seq[(String, String, String, Int, Int, String, java.math.BigDecimal)]) = {
     import spark.implicits._
     // Cast to the declared silver type (Decimal(28,4)); production feeds the gate
     // cast silver data, so the fixture must match or the strict type precondition
     // correctly flags it Unevaluable.
     rows
-      .toDF("adsh", "tag", "version", "ddate", "qtrs", "value")
+      .toDF("adsh", "tag", "version", "ddate", "qtrs", "uom", "value")
       .withColumn("value", col("value").cast(DecimalType(28, 4)))
   }
 
@@ -39,8 +39,8 @@ class DataQualityGateSpec extends AnyFunSuite with SparkTestSupport {
     val v = new java.math.BigDecimal("100.0000")
     val df = numDf(
       Seq(
-        ("0001", "Assets", "v1", 20230331, 1, v),
-        ("0001", "Assets", "v1", 20230331, 1, v) // dup of (adsh,tag,version,ddate,qtrs)
+        ("0001", "Assets", "v1", 20230331, 1, "USD", v),
+        ("0001", "Assets", "v1", 20230331, 1, "USD", v) // dup of (adsh,tag,version,ddate,qtrs,uom)
       )
     )
     assert(
@@ -50,11 +50,23 @@ class DataQualityGateSpec extends AnyFunSuite with SparkTestSupport {
     )
   }
 
+  test("same fact in two units is NOT a duplicate: uom is part of the natural key") {
+    val df = numDf(
+      Seq(
+        ("0001", "Assets", "v1", 20230331, 1, "USD", new java.math.BigDecimal("100.0000")),
+        ("0001", "Assets", "v1", 20230331, 1, "EUR", new java.math.BigDecimal("92.0000"))
+      )
+    )
+    assert(
+      DataQualityGate.gate(df, DataQualityGate.silverNumContract, DataQualityGate.requiredNumCols) == Pass
+    )
+  }
+
   test("clean batch -> Pass") {
     val df = numDf(
       Seq(
-        ("0001", "Assets", "v1", 20230331, 1, new java.math.BigDecimal("100.0000")),
-        ("0001", "Liabilities", "v1", 20230331, 1, new java.math.BigDecimal("40.0000"))
+        ("0001", "Assets", "v1", 20230331, 1, "USD", new java.math.BigDecimal("100.0000")),
+        ("0001", "Liabilities", "v1", 20230331, 1, "USD", new java.math.BigDecimal("40.0000"))
       )
     )
     assert(

@@ -5,7 +5,7 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 
 object SilverMerge {
-  private val keyCols = Seq("adsh", "tag", "version", "ddate", "qtrs")
+  private val keyCols = Seq("adsh", "tag", "version", "ddate", "qtrs", "uom")
 
   /** Restatement upsert. Idempotent: latest _ingest_ts wins; equal is a no-op. */
   def upsert(spark: SparkSession, silverPath: String, batch: DataFrame): Unit =

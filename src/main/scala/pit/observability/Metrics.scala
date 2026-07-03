@@ -4,6 +4,7 @@ final case class RunMetrics(
     batchId: String,
     rowsIn: Long,
     rowsOut: Long,
+    scopedOut: Long,
     rejected: Long,
     quarantined: Long,
     gateOutcome: String,
@@ -11,6 +12,6 @@ final case class RunMetrics(
 ) {
   // ASCII only (Windows cp1252 console safe), keyed by batch id.
   def asLogLine: String =
-    s"run batch_id=$batchId rows_in=$rowsIn rows_out=$rowsOut " +
+    s"run batch_id=$batchId rows_in=$rowsIn rows_out=$rowsOut scoped_out=$scopedOut " +
       s"rejected=$rejected quarantined=$quarantined gate=$gateOutcome delta_version=$deltaVersion"
 }
