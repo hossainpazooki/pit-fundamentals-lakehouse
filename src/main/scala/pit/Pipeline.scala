@@ -2,13 +2,15 @@ package pit
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.lit
 import pit.config.AppConfig
-import pit.gold.GoldPit
+import pit.gold.GoldRebuild
 import pit.observability.RunMetrics
 import pit.silver.DataQualityGate
 import pit.silver.Fail
 import pit.silver.Pass
 import pit.silver.SilverMerge
+import pit.silver.SilverSubStore
 import pit.silver.SilverTransforms
 import pit.silver.Unevaluable
 
@@ -38,7 +40,10 @@ object Pipeline {
     throw new DataQualityException(s"DQ gate unevaluable: $reason")
   }
 
-  /** Core stage path, frame-driven so it unit-tests without reading TSVs. */
+  /** Core stage path, frame-driven so it unit-tests without reading TSVs: silver stages plus a gold rebuild
+    * from the ACCUMULATED sub store (never this batch's sub slice — the gold sub-scoping finding,
+    * 2026-07-07).
+    */
   def runFromFrames(
       spark: SparkSession,
       cfg: AppConfig,
@@ -47,6 +52,24 @@ object Pipeline {
       batchId: String,
       ingestTs: Timestamp
   ): RunMetrics = {
+    val m = runSilverStage(spark, cfg, num, sub, batchId, ingestTs)
+    GoldRebuild.rebuild(spark, cfg)
+    m
+  }
+
+  /** Stages through the silver merge only, so a multi-quarter backfill can defer the gold rebuild to one
+    * `GoldRebuild` pass at the end. Metrics are silver-stage: `rowsOut` is rows merged to silver (was: gold
+    * table count) and `deltaVersion` is the silver table version (was: gold).
+    */
+  def runSilverStage(
+      spark: SparkSession,
+      cfg: AppConfig,
+      num: DataFrame,
+      sub: DataFrame,
+      batchId: String,
+      ingestTs: Timestamp
+  ): RunMetrics = {
+    val startNanos = System.nanoTime()
     val rowsIn = num.count()
     // §6 precondition on the SOURCE: a missing required column must be Unevaluable, not masked
     // into a completeness Fail by castNum (which manufactures absent columns as typed nulls).
@@ -86,21 +109,26 @@ object Pipeline {
     }
 
     SilverMerge.upsert(spark, cfg.paths.silverRoot, valid)
-    val silver = spark.read.format("delta").load(cfg.paths.silverRoot)
-    val gold = GoldPit.buildGold(silver, sub)
-    gold.write.format("delta").mode("overwrite").save(cfg.paths.goldRoot)
+    // Grow the accumulated filing index in lockstep with silver, so any later gold rebuild joins
+    // against every filing ever ingested, not this batch's slice.
+    SilverSubStore.upsert(
+      spark,
+      SilverSubStore.path(cfg),
+      sub.withColumn("_ingest_ts", lit(ingestTs))
+    )
 
     val deltaVersion =
-      io.delta.tables.DeltaTable.forPath(spark, cfg.paths.goldRoot).history(1).head().getAs[Long]("version")
+      io.delta.tables.DeltaTable.forPath(spark, cfg.paths.silverRoot).history(1).head().getAs[Long]("version")
     RunMetrics(
       batchId,
       rowsIn,
-      gold.count(),
+      valid.count(),
       scopedOut,
       rowsIn - scopedOut - valid.count(),
       quarantined,
       gateLabel,
-      deltaVersion
+      deltaVersion,
+      (System.nanoTime() - startNanos) / 1000000L
     )
   }
 
@@ -120,9 +148,12 @@ object Pipeline {
     try {
       val codeSha = sys.env.getOrElse("VANTAGE_CODE_SHA", "unknown")
       val ingestTs = new java.sql.Timestamp(System.currentTimeMillis())
+      // Silver stage only: gold is a pure rebuild over the WHOLE lake, so a multi-quarter run
+      // defers it to one `pit.gold.GoldRebuild` pass at the end instead of rebuilding an
+      // ever-growing gold once per quarter. Single-shot local runs: run GoldRebuild after this.
       cfg.ingest.quarters.foreach { q =>
         val r = pit.ingest.TsvIngest.ingestQuarter(spark, cfg, q, codeSha, ingestTs)
-        val m = runFromFrames(spark, cfg, r.num, r.sub, r.batchId, ingestTs)
+        val m = runSilverStage(spark, cfg, r.num, r.sub, r.batchId, ingestTs)
         println(m.asLogLine) // ASCII
       }
     } finally spark.stop()
