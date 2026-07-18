@@ -75,11 +75,14 @@ cross-checks against the logs (exit 0 = match). It's the tool to re-derive any n
 - **Banned vocabulary** in outward docs: "scale", "at scale", "high-throughput", "TB". The
   §10 "named at 100×, not built" maintenance-ops note stays restated, not softened.
 
-## Next: Gate B (Databricks) — not started
+## Next: Gate B (Databricks) — locally evidenced, deploy blocked on auth
 
-`databricks.yml` is a configured-not-deployed Asset Bundle. Three known defects to fix
-*during* deploy where they can be probed: the referenced assembly jar is stale (predates
-the 2026-07-08 fixes — rebuild it); the job has one task and never runs `GoldRebuild` (so
-no gold is built); the `spark_env_vars` wiring is unprobed. Needs workspace auth
-(operator-only). This is the only open workstream; the local build session is complete
-and fully logged.
+The WAP-shaped publish evidence (2026-07-18) lives in `docs/GATE-B-WAP-EVIDENCE.md`:
+audit green on the real lake, the same audit demonstrably red on a mutated twin
+(429,949-row lookahead at the as-of seam), consumer-path probe + negative control
+proven non-vacuous (`scripts/gate_b_audit.py`, `gate_b_mutate_twin.py`,
+`gate_b_probe.py`). Of the three bundle defects: jar rebuilt 2026-07-18,
+`run_gold_rebuild` task added, `spark_env_vars` wired but **unprobed until a real
+run**. The deploy + post-publish probe need workspace auth (operator-only; runbook
+in the evidence doc) — until that probe runs, the publish is **not credited**
+(fail-closed).
