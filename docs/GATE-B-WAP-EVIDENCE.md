@@ -1,6 +1,7 @@
 # Gate B — WAP-shaped publish evidence record
 
-**Date:** 2026-07-18 · **Code state:** HEAD `85ab2cb` + this session's uncommitted work.
+**Dates:** 2026-07-18 (local firing) · 2026-07-19 (workspace publish) · **Code
+state:** commits `35e277e`/`deed12f` + the serverless-port work of 07-19.
 This is the runnable-artifact record for the first WAP-shaped firing of the
 three-part publish-credit rule (rigor ADR-0005 resolution 3 — **Proposed, not
 ratified**; this firing exercises the shipped skills `verify-the-effect`,
@@ -8,18 +9,84 @@ ratified**; this firing exercises the shipped skills `verify-the-effect`,
 settled practice). VANTAGE is the origin repo for those skills: this firing earns
 **no promotion credit** and does not unlock ADR-0005's bridge doc.
 
-## Credit verdict, fail-closed: **NOT YET CREDITED**
+## Credit verdict, fail-closed: **CREDITED 2026-07-19**
 
 | Part | Requirement | Status |
 |---|---|---|
-| 1 | Audit green on the staged candidate | **[VALIDATED]** locally (below) |
-| 2 | Same audit demonstrably red on a mutated twin | **[VALIDATED]** locally (below) |
-| 3 | Post-publish consumer-path probe + negative control | **[BASELINE]** machinery proven non-vacuous locally; the real probe against workspace gold is **blocked on operator auth** |
+| 1 | Audit green on the staged candidate | **[VALIDATED]** — local lake GREEN (86,615,392 rows) 07-18 AND published workspace lake GREEN (1,464,407 rows) 07-19, all 8 checks |
+| 2 | Same audit demonstrably red on a mutated twin | **[VALIDATED]** 07-18 — RED with A1 = 429,949, exactly the mutated row count, all else green |
+| 3 | Post-publish consumer-path probe + negative control | **[VALIDATED]** 07-19 — probe PASS through the published workspace gold; negative control captured pre-publish FAILED against the effect-absent state; `check-effect-probe.mjs` → `effect-probe: clean`, exit 0 |
 
 An audit never seen red is unevaluable and unevaluable halts — part 2 exists so
-this record can never claim credit from a green-only audit. Because part 3 has
-not run against the *published* state, the Databricks publish is **not credited**;
-nothing here says otherwise.
+this record can never claim credit from a green-only audit.
+
+## The workspace publish (2026-07-19)
+
+The workspace (`dbc-a430129d-60c9`, serverless-only) rejected classic clusters,
+which forced a real port (§Serverless port below). The publish run
+(`jobs/997431786577151/runs/617741392256248`), verbatim:
+
+```
+run batch_id=3adacaf4370d6f96aa63c425fcf05dc0591ac68be92a6fc69d0c7134646732ed rows_in=3690955 rows_out=1464407 scoped_out=2185031 rejected=41517 quarantined=41517 gate=Pass delta_version=0 wall_clock_ms=44977
+gold_rebuild rows=1464407 delta_version=0 wall_clock_ms=31872
+```
+
+Every count **matches the local 2026q1 backfill row-for-row** (rows_in 3,690,955;
+scoped_out 2,185,031; silver/gold 1,464,407; null-value quarantine 41,517) — a
+cross-machine reproduction of the pipeline on independent compute.
+
+**Part-3 probe, ordered correctly:** the negative control ran BEFORE the publish
+(workspace gold absent: listing error, download failure, probe FAIL recorded);
+after the publish, the same probe through the published gold returned the
+expectation derived from the LOCAL lake in advance — AAPL (cik 320193) `Assets`
+ddate 20251231 as-of 2026-07-01 → `379297000000.0000`, adsh
+`0000320193-26-000006`, valid_from `2026-01-30 11:02` — PASS. Records in
+`~/dev/vantage-data/gate-b/probe-records-workspace.json`; lint clean.
+
+**Audit on the published lake** (identical `gate_b_audit.py`, downloaded bytes):
+all 8 checks PASS over 1,464,407 active rows, registry 1/1/1
+(`audit-workspace.json`).
+
+**Lineage cross-check:** workspace vs local 2026q1 registry manifests —
+`source_sha256` and `schema_version` IDENTICAL (same SEC bytes), `batch_id`
+differs solely via `code_sha` (workspace ran with `VANTAGE_CODE_SHA` unset →
+`unknown`), which is content-addressed identity behaving as specified.
+
+Residual gaps, stated: (1) workspace `code_sha` is `unknown` — serverless has no
+env vars; pass it as a `KEY=VALUE` arg in a follow-up; (2) the open-interval
+sentinel's stored instant differs across environments by the session-zone offset
+(local `9999-12-31 05:00Z`-equivalent vs workspace `9999-12-31 00:00-05`) — a
+representation difference in the far-future sentinel only, no as-of query before
+year 9999 can observe it; (3) the audit ran on downloaded bytes of the published
+tables, not in-workspace compute.
+
+## Serverless port (2026-07-19) — what the workspace constraint forced
+
+"Only serverless compute is supported in the workspace" (400 on job create), and
+serverless JAR tasks require Scala 2.13 + Databricks Connect (environment v4).
+Port, one source tree, both profiles green:
+
+- **Dual build profiles:** 2.12 classic (local dev + the 40-test suite) and 2.13
+  Databricks Connect 17.3 `Provided` (the serverless jar). The suite cannot run
+  on the connect profile; **2.12 green is the parity gate** for shared code.
+- **Deequ removed; native DQ gate.** Deequ is classic-internals-only and
+  2.12-only. `DataQualityGate` now evaluates the same contract (completeness,
+  6-col natural-key uniqueness, non-negativity) with plain aggregations behind
+  an explicit `GateContract`; identical Pass/Fail/Unevaluable fail-closed
+  semantics, pinned by the pre-existing gate tests.
+- **`io.delta.tables` → SQL (`pit.util.DeltaIO`):** merges as `MERGE INTO
+  delta.`path``, versions via `DESCRIBE HISTORY`, existence probe via read
+  resolution — one code path for classic and Connect.
+- **Config via JAR-task args:** serverless has no env vars;
+  `AppConfig.loadFromArgs` turns `PIT_*=value` parameters into system properties
+  HOCON resolves like env vars. Entrypoints keep the America/New_York session
+  pin via runtime conf (builder-time static confs are rejected on Connect).
+- **Bundle:** serverless environment v4 with `java_dependencies` pointing at the
+  jar uploaded to `/Volumes/workspace/default/vantage/jars/` (the bundle does
+  not rewrite local paths inside environment specs — learned from a live 400 +
+  `cp: cannot stat` failure); source data + lake live under the
+  `workspace.default.vantage` UC volume (public DBFS root is disabled).
+- Suite after the port: **40/40, exit 0** (2026-07-19). 2.13 assembly clean.
 
 ## The audit (parts 1–2 artifact)
 
@@ -89,7 +156,7 @@ seam.
    the twin was rebuilt from a fresh copy and re-mutated, giving the clean red
    above.
 
-## Part 3 — consumer-path probe (machinery proven; real firing pending)
+## Part 3 — consumer-path probe machinery (local rehearsal, 2026-07-18)
 
 `scripts/gate_b_probe.py` queries gold exactly as a consumer would (as-of
 semantics over the Delta snapshot) and passes only if an *independently derived*
@@ -104,42 +171,26 @@ expected fact comes back. Rehearsal 2026-07-18 (records at
   `effect-probe: clean` — the probe demonstrably discriminates presence from
   absence; it is not vacuous.
 
-This rehearsal credits the **machinery only**. The publish-credit probe must run
-against the *workspace* gold after the bundle job publishes it, with its negative
-control captured against the pre-publish workspace state.
+This rehearsal credited the **machinery only**; the real firing against the
+published workspace state (2026-07-19, §above) is what credits the publish. The
+three original bundle defects all closed along the way: jar rebuilt (twice —
+2.12 on 07-18, then the 2.13 connect jar on 07-19), `run_gold_rebuild` task
+added, and config wiring probed live (as JAR-task parameters; the original
+`spark_env_vars` design died with classic compute).
 
-## Bundle state (defects fixed this session)
+## Re-running the publish
 
-- **Jar (defect 1):** `sbt assembly` rerun 2026-07-18 → `target/scala-2.12/`
-  `vantage-assembly-0.1.0.jar` (2026-07-18 18:14; postdates the 2026-07-08 fixes).
-- **GoldRebuild task (defect 2):** `databricks.yml` now has `run_gold_rebuild`
-  (`pit.gold.GoldRebuild`) strictly after `run_pipeline` on a shared job
-  cluster — gold stays a pure once-after rebuild.
-- **Env wiring (defect 3):** `spark_env_vars` carries the full PIT_* contract
-  (`silver_sub` derives from `PIT_SILVER_ROOT` in code). Config-level only —
-  **unprobed until a real run**.
-- `databricks bundle validate` parses the bundle (name/target resolve; the only
-  error is missing auth). Full validation, deploy, and run are operator-gated.
+```powershell
+$env:DATABRICKS_HOST='https://dbc-a430129d-60c9.cloud.databricks.com'
+sbt "++2.13.16 assembly"
+databricks fs cp --overwrite target/scala-2.13/vantage-assembly-0.1.0.jar dbfs:/Volumes/workspace/default/vantage/jars/vantage-assembly-0.1.0.jar
+databricks bundle deploy -t dev --var="source_dir=/Volumes/workspace/default/vantage/source" --var="lake_root=/Volumes/workspace/default/vantage/lake"
+databricks bundle run vantage_pipeline -t dev --var="source_dir=..." --var="lake_root=..."
+```
 
-## Operator runbook — the real part-3 firing
-
-Order matters: the negative control must be captured while the workspace is
-still in the effect-absent state.
-
-1. `databricks auth login --host <workspace-url>` (interactive; agent-forbidden).
-2. `databricks bundle validate` — must pass cleanly now.
-3. **Capture the negative control FIRST** (pre-publish, effect-absent):
-   `python scripts/gate_b_probe.py --gold <workspace-gold-path> ... --role control --record ...`
-   (must FAIL).
-4. `databricks bundle deploy -t dev` then run job `vantage-pipeline`; both tasks
-   must succeed (`run_pipeline`, then `run_gold_rebuild` printing
-   `gold_rebuild rows=... delta_version=...`).
-5. Run the audit against the workspace lake (adapt `--lake` to the workspace
-   path or run the checks in a workspace notebook) — green required.
-6. **Probe** the workspace gold through the consumer path with expectations
-   derived from the LOCAL lake (e.g. the cik-1750 fact above) — must PASS.
-7. `node ~/dev/rigor/scripts/check-effect-probe.mjs <records>` → must print
-   `effect-probe: clean`. Only then is the publish credited.
+Credit discipline for any future publish: negative control against the
+pre-publish state FIRST, then run, then audit + probe the published state, then
+`check-effect-probe.mjs` must print `effect-probe: clean`.
 
 ## Adversarial verification of this record (2026-07-18)
 
@@ -171,4 +222,7 @@ only judgment|cheap and current config maps both to the same model id.)
 
 Outside the repo (data-dir convention, not clonable):
 `~/dev/vantage-data/gate-b/` — `audit-candidate.json`, `audit-twin.json`,
-`mutation-manifest.json`, `probe-records.json`, `twin-lake/` (disposable, 5.3G).
+`audit-workspace.json`, `mutation-manifest.json`, `probe-records.json`,
+`probe-records-workspace.json`, `dispatch-log.json`, `twin-lake/` (disposable,
+5.3G), `workspace-lake/` (downloaded published tables). In the workspace:
+`/Volumes/workspace/default/vantage/{source,lake,jars,artifacts}`.

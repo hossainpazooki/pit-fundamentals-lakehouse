@@ -45,6 +45,14 @@ Hadoop runtime. On Windows, `winutils.exe` + `hadoop.dll` must be on `HADOOP_HOM
 Actions) runs suite + scalafmt/scalafix + assembly on every push — that gate is the
 final word, never an assumption. Exact test count lives in `README.md` Status.
 
+**Two build profiles, one source tree** (serverless port, 2026-07-19): 2.12 = classic
+Spark (local dev + the whole test suite); 2.13 = Databricks Connect 17.3 for serverless
+JAR tasks — `sbt "++2.13.16 assembly"`, jar under `target/scala-2.13/`. The suite only
+runs on 2.12 (Connect has no local Spark); 2.12 green is the parity gate. Delta ops go
+through `pit.util.DeltaIO` (SQL MERGE / DESCRIBE HISTORY — no `io.delta.tables`), and
+the DQ gate is native DataFrame aggregations (no Deequ). Entrypoints accept PIT_* config
+as `KEY=VALUE` args (serverless has no env vars); env vars still work locally.
+
 ## Running the pipeline
 
 Two steps by design (gold is a pure rebuild, done once — never per quarter):
@@ -75,14 +83,17 @@ cross-checks against the logs (exit 0 = match). It's the tool to re-derive any n
 - **Banned vocabulary** in outward docs: "scale", "at scale", "high-throughput", "TB". The
   §10 "named at 100×, not built" maintenance-ops note stays restated, not softened.
 
-## Next: Gate B (Databricks) — locally evidenced, deploy blocked on auth
+## Gate B (Databricks) — DONE; publish credited 2026-07-19
 
-The WAP-shaped publish evidence (2026-07-18) lives in `docs/GATE-B-WAP-EVIDENCE.md`:
-audit green on the real lake, the same audit demonstrably red on a mutated twin
-(429,949-row lookahead at the as-of seam), consumer-path probe + negative control
-proven non-vacuous (`scripts/gate_b_audit.py`, `gate_b_mutate_twin.py`,
-`gate_b_probe.py`). Of the three bundle defects: jar rebuilt 2026-07-18,
-`run_gold_rebuild` task added, `spark_env_vars` wired but **unprobed until a real
-run**. The deploy + post-publish probe need workspace auth (operator-only; runbook
-in the evidence doc) — until that probe runs, the publish is **not credited**
-(fail-closed).
+Full record in `docs/GATE-B-WAP-EVIDENCE.md`: the three-part WAP credit rule ran
+end-to-end — audit green on the real lake AND on the published workspace tables, the
+same audit demonstrably red on a mutated twin (A1 = 429,949, exactly the mutated
+rows), and the post-publish consumer probe (expectation pre-derived from the local
+lake, negative control captured pre-publish) with `check-effect-probe.mjs` clean.
+The workspace (`dbc-a430129d-60c9`) is serverless-only, which forced the 2.13
+Connect port above; the 2026q1 publish reproduced local counts row-for-row.
+Auth note: `databricks auth login` from a non-interactive shell stores the OAuth
+token but writes no profile — prefix commands with `$env:DATABRICKS_HOST=...`.
+Residual gaps: workspace `code_sha` is `unknown` (pass VANTAGE_CODE_SHA as a task
+arg in a follow-up); the far-future sentinel's stored instant differs across
+environments by the session-zone offset (unobservable before year 9999).

@@ -16,7 +16,7 @@ cross-check, which passes exactly (`scripts/recompute_metrics.py`, exit 0).
 | scoped_out | entity-scope predicate re-applied to bronze per batch |
 | rows_to_silver | silver `_delta_log` WRITE/MERGE `operationMetrics` per commit |
 | q_rows / q_uneval | quarantine lanes counted per `(_batch_id, _ingest_ts)` run-slice (append-mode audit lanes grow on rerun, by design) |
-| q_detail | `/detail` `_delta_log` commit metrics (Deequ check-result rows) |
+| q_detail | `/detail` `_delta_log` commit metrics (Deequ check-result rows at backfill time; runs after the 2026-07-19 serverless port write the native gate's detail schema instead) |
 | dedupe | MERGE metrics: `numSourceRows − inserted − matchedUpdated` |
 | key_collisions | 6-col natural key `GROUP BY … HAVING count>1` over bronze per batch |
 | wall_clock_s | `wall_clock_ms` in the run log line (silver stage; excludes ~30–45 s sbt/JVM startup per invocation; halted quarters show 0 — no completed stage) |
