@@ -3,57 +3,67 @@ bundle:
 
 variables:
   source_dir:
-    description: DBFS/volume path holding <quarter>/num.txt + sub.txt directories (unzipped SEC Financial Statement Data Sets)
+    description: Volume path holding <quarter>/num.txt + sub.txt directories (unzipped SEC Financial Statement Data Sets)
   lake_root:
-    description: DBFS/volume root under which bronze/silver/gold/quarantine/registry are written
+    description: Volume root under which bronze/silver/gold/quarantine/registry are written
   quarters:
     description: Comma-separated quarter list (the PIT_QUARTERS contract)
     default: "2026q1"
 
+# Serverless-only workspace (classic clusters rejected with INVALID_PARAMETER_VALUE).
+# Serverless JAR tasks: Scala 2.13 jar compiled against Databricks Connect (environment
+# version 4), config passed as KEY=VALUE task parameters (no env vars on serverless;
+# AppConfig.loadFromArgs turns them into system properties HOCON resolves like env vars).
 resources:
   jobs:
     vantage_pipeline:
       name: vantage-pipeline
-      job_clusters:
-        - job_cluster_key: main
-          new_cluster:
-            spark_version: 15.4.x-scala2.12
-            node_type_id: m5d.large
-            num_workers: 2
-            # The entrypoints read their config from PIT_* env vars (application.conf
-            # substitutions); spark_env_vars is how they reach the driver's environment.
-            # silver_sub derives from PIT_SILVER_ROOT in code (SilverSubStore.path).
-            spark_env_vars:
-              PIT_SOURCE_DIR: ${var.source_dir}
-              PIT_BRONZE_ROOT: ${var.lake_root}/bronze
-              PIT_SILVER_ROOT: ${var.lake_root}/silver
-              PIT_GOLD_ROOT: ${var.lake_root}/gold
-              PIT_QUARANTINE_ROOT: ${var.lake_root}/quarantine
-              PIT_REGISTRY_PATH: ${var.lake_root}/registry
-              PIT_QUARTERS: ${var.quarters}
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            # Serverless JAR tasks take the jar via environment java_dependencies, not
+            # task libraries. Absolute volume path: the bundle does not rewrite local
+            # paths here, so the jar is uploaded explicitly (databricks fs cp) after
+            # every `sbt "++2.13.16 assembly"`.
+            java_dependencies:
+              - /Volumes/workspace/default/vantage/jars/vantage-assembly-0.1.0.jar
       tasks:
         - task_key: run_pipeline
-          job_cluster_key: main
+          environment_key: default
           spark_jar_task:
             main_class_name: pit.Pipeline
-            parameters: []
-          libraries:
-            - jar: ./target/scala-2.12/vantage-assembly-0.1.0.jar
+            parameters:
+              - PIT_SOURCE_DIR=${var.source_dir}
+              - PIT_BRONZE_ROOT=${var.lake_root}/bronze
+              - PIT_SILVER_ROOT=${var.lake_root}/silver
+              - PIT_GOLD_ROOT=${var.lake_root}/gold
+              - PIT_QUARANTINE_ROOT=${var.lake_root}/quarantine
+              - PIT_REGISTRY_PATH=${var.lake_root}/registry
+              - PIT_QUARTERS=${var.quarters}
         # Gold is a PURE REBUILD done once after all quarters land (never per
         # quarter) -- hence a separate task strictly after run_pipeline.
         - task_key: run_gold_rebuild
           depends_on:
             - task_key: run_pipeline
-          job_cluster_key: main
+          environment_key: default
           spark_jar_task:
             main_class_name: pit.gold.GoldRebuild
-            parameters: []
-          libraries:
-            - jar: ./target/scala-2.12/vantage-assembly-0.1.0.jar
+            parameters:
+              - PIT_SOURCE_DIR=${var.source_dir}
+              - PIT_BRONZE_ROOT=${var.lake_root}/bronze
+              - PIT_SILVER_ROOT=${var.lake_root}/silver
+              - PIT_GOLD_ROOT=${var.lake_root}/gold
+              - PIT_QUARANTINE_ROOT=${var.lake_root}/quarantine
+              - PIT_REGISTRY_PATH=${var.lake_root}/registry
+              - PIT_QUARTERS=${var.quarters}
 
 targets:
   dev:
     mode: development
     default: true
+    workspace:
+      # Serverless JAR tasks install libraries from UC volumes, not workspace files.
+      artifact_path: /Volumes/workspace/default/vantage/artifacts/${workspace.current_user.short_name}
   prod:
     mode: production
