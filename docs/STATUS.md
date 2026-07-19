@@ -1,8 +1,9 @@
 # Status — gates, runs, deployment
 
-State as of 2026-07-19 (moved out of the README 2026-07-19). Live CI: GitHub
-Actions runs the full suite + scalafmt/scalafix + fat-jar assembly on every push —
-that gate is the final word, never an assumption. **40 tests pass.**
+State as of 2026-07-19 (moved out of the README 2026-07-19). Live CI: see the
+badge on the [README](../README.md) — GitHub Actions runs the full suite +
+scalafmt/scalafix + fat-jar assembly on every push; that gate is the final word,
+never an assumption. **40 tests pass.**
 
 ## Gates
 
