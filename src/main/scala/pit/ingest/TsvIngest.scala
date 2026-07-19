@@ -1,6 +1,5 @@
 package pit.ingest
 
-import io.delta.tables.DeltaTable
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.col
@@ -62,11 +61,7 @@ object TsvIngest {
     BronzeIngest.appendIdempotent(spark, s"${cfg.paths.bronzeRoot}/sub", subBronze)
 
     // 4. Delta version is RETRIEVAL coordinate, not identity (see CONTRACT §1).
-    val bronzeNumVersion = DeltaTable
-      .forPath(spark, s"${cfg.paths.bronzeRoot}/num")
-      .history(1)
-      .head()
-      .getAs[Long]("version")
+    val bronzeNumVersion = pit.util.DeltaIO.latestVersion(spark, s"${cfg.paths.bronzeRoot}/num")
 
     // 5. Register the batch so the manifest+version are recoverable by id.
     BatchRegistry.register(

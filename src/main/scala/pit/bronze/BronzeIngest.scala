@@ -1,9 +1,9 @@
 package pit.bronze
 
-import io.delta.tables.DeltaTable
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
+import pit.util.DeltaIO
 
 import java.sql.Timestamp
 
@@ -36,18 +36,15 @@ object BronzeIngest {
 
   /** Append-only. Dedupe on (_batch_id, _src_row_hash) so re-ingest is a no-op. */
   def appendIdempotent(spark: SparkSession, bronzePath: String, batch: DataFrame): Unit =
-    if (!DeltaTable.isDeltaTable(spark, bronzePath)) {
+    if (!DeltaIO.isDeltaTable(spark, bronzePath)) {
       batch.write.format("delta").mode("overwrite").save(bronzePath)
     } else {
-      val table = DeltaTable.forPath(spark, bronzePath)
-      table
-        .as("t")
-        .merge(
-          batch.as("s"),
-          "t._batch_id = s._batch_id AND t._src_row_hash = s._src_row_hash"
-        )
-        .whenNotMatched()
-        .insertAll()
-        .execute()
+      DeltaIO.merge(
+        spark,
+        bronzePath,
+        batch,
+        "t._batch_id = s._batch_id AND t._src_row_hash = s._src_row_hash",
+        updateWhenMatched = false
+      )
     }
 }

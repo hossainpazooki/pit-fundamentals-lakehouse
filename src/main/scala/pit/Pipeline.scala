@@ -117,8 +117,7 @@ object Pipeline {
       sub.withColumn("_ingest_ts", lit(ingestTs))
     )
 
-    val deltaVersion =
-      io.delta.tables.DeltaTable.forPath(spark, cfg.paths.silverRoot).history(1).head().getAs[Long]("version")
+    val deltaVersion = pit.util.DeltaIO.latestVersion(spark, cfg.paths.silverRoot)
     RunMetrics(
       batchId,
       rowsIn,
@@ -133,18 +132,22 @@ object Pipeline {
   }
 
   def main(args: Array[String]): Unit = {
-    val cfg = AppConfig.load()
-    val builder = SparkSession
-      .builder()
-      .appName(cfg.spark.appName)
-      .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-      .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-      // SEC `accepted` timestamps are US Eastern and carry no zone; parsing them in the
-      // machine's local zone would move the PIT boundary across machines (found on the
-      // 2026q1 run, GATE-A record). Pin the session zone so ingest is zone-deterministic.
-      .config("spark.sql.session.timeZone", "America/New_York")
-    cfg.spark.master.foreach(builder.master) // absent on a cluster, where the runtime provides it
+    val cfg = AppConfig.loadFromArgs(args)
+    val builder = SparkSession.builder().appName(cfg.spark.appName)
+    // Local/classic mode wires Delta itself; Databricks provides Delta, and Spark Connect
+    // (serverless) rejects these static confs, so they ride the master setting (local-only).
+    cfg.spark.master.foreach { m =>
+      builder
+        .master(m)
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+    }
     val spark = builder.getOrCreate()
+    // SEC `accepted` timestamps are US Eastern and carry no zone; parsing them in the
+    // machine's local zone would move the PIT boundary across machines (found on the
+    // 2026q1 run, GATE-A record). Runtime session conf, not builder conf, so the pin also
+    // applies on Spark Connect.
+    spark.conf.set("spark.sql.session.timeZone", "America/New_York")
     try {
       val codeSha = sys.env.getOrElse("VANTAGE_CODE_SHA", "unknown")
       val ingestTs = new java.sql.Timestamp(System.currentTimeMillis())

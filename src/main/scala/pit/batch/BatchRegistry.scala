@@ -1,10 +1,10 @@
 package pit.batch
 
-import io.delta.tables.DeltaTable
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
+import pit.util.DeltaIO
 
 final case class BatchRecord(batchId: String, manifestJson: String, deltaVersion: Long)
 
@@ -19,28 +19,20 @@ object BatchRegistry {
 
   def register(spark: SparkSession, registryPath: String, record: BatchRecord): Unit = {
     val row = spark.createDataFrame(
-      spark.sparkContext.parallelize(
-        Seq(Row(record.batchId, record.manifestJson, record.deltaVersion))
+      java.util.Collections.singletonList(
+        Row(record.batchId, record.manifestJson, record.deltaVersion)
       ),
       schema
     )
-    if (!DeltaTable.isDeltaTable(spark, registryPath)) {
+    if (!DeltaIO.isDeltaTable(spark, registryPath)) {
       row.write.format("delta").mode("overwrite").save(registryPath)
     } else {
-      DeltaTable
-        .forPath(spark, registryPath)
-        .as("t")
-        .merge(row.as("s"), "t.batch_id = s.batch_id")
-        .whenMatched()
-        .updateAll()
-        .whenNotMatched()
-        .insertAll()
-        .execute()
+      DeltaIO.merge(spark, registryPath, row, "t.batch_id = s.batch_id")
     }
   }
 
   def lookup(spark: SparkSession, registryPath: String, batchId: String): Option[BatchRecord] =
-    if (!DeltaTable.isDeltaTable(spark, registryPath)) None
+    if (!DeltaIO.isDeltaTable(spark, registryPath)) None
     else
       spark.read
         .format("delta")

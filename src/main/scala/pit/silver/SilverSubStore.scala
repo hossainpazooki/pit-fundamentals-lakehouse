@@ -1,9 +1,9 @@
 package pit.silver
 
-import io.delta.tables.DeltaTable
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 import pit.config.AppConfig
+import pit.util.DeltaIO
 
 /** Accumulated typed filing index (adsh -> cik, accepted), one row per adsh, grown batch by batch. Gold must
   * always rebuild against THIS store, never a single batch's sub slice: gold's adsh join scoped to the
@@ -15,17 +15,15 @@ object SilverSubStore {
   def path(cfg: AppConfig): String = s"${cfg.paths.silverRoot}_sub"
 
   def upsert(spark: SparkSession, storePath: String, batch: DataFrame): Unit =
-    if (!DeltaTable.isDeltaTable(spark, storePath)) {
+    if (!DeltaIO.isDeltaTable(spark, storePath)) {
       batch.write.format("delta").mode("overwrite").save(storePath)
     } else {
-      DeltaTable
-        .forPath(spark, storePath)
-        .as("t")
-        .merge(batch.as("s"), "t.adsh = s.adsh")
-        .whenMatched("s._ingest_ts > t._ingest_ts")
-        .updateAll()
-        .whenNotMatched()
-        .insertAll()
-        .execute()
+      DeltaIO.merge(
+        spark,
+        storePath,
+        batch,
+        "t.adsh = s.adsh",
+        matchedUpdateCondition = Some("s._ingest_ts > t._ingest_ts")
+      )
     }
 }

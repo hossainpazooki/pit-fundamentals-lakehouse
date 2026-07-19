@@ -1,34 +1,45 @@
-ThisBuild / scalaVersion := "2.12.18"
 ThisBuild / organization := "pit"
 ThisBuild / version := "0.1.0"
 
+val scala212 = "2.12.18"
+val scala213 = "2.13.16"
 val sparkV = "3.5.1"
 val deltaV = "3.2.0"
-val deequV = "2.0.7-spark-3.5"
 
-// Scalafix OrganizeImports (removeUnused = true by default) needs the compiler
-// to flag unused imports; -Ywarn-unused-import is the 2.12 switch for that.
-ThisBuild / scalacOptions += "-Ywarn-unused-import"
+// Two profiles, one source tree (serverless port, 2026-07-18):
+//   2.12 = classic Spark, local dev + the full test suite (Spark local mode).
+//   2.13 = Databricks Connect 17.3 client, the ONLY profile serverless JAR tasks accept
+//          (Scala 2.13 / JDK 17 / serverless environment version 4). Spark and Delta APIs
+//          come from the connect client; nothing Spark-shaped is bundled in the jar.
+// The suite cannot run on the connect profile (no local Spark there) -- 2.12 green is the
+// parity gate for code shared by both.
+ThisBuild / scalaVersion := scala212
 
 lazy val root = (project in file("."))
   .settings(
     name := "vantage",
-    libraryDependencies ++= Seq(
-      "org.apache.spark" %% "spark-core" % sparkV % Provided,
-      "org.apache.spark" %% "spark-sql" % sparkV % Provided,
-      "io.delta" %% "delta-spark" % deltaV,
-      "com.amazon.deequ" % "deequ" % deequV,
-      "com.github.pureconfig" %% "pureconfig" % "0.17.6",
-      "org.scalatest" %% "scalatest" % "3.2.18" % Test,
-      // Spark needed at test runtime since main deps are Provided:
-      "org.apache.spark" %% "spark-core" % sparkV % Test,
-      "org.apache.spark" %% "spark-sql" % sparkV % Test
-    ),
-    // Deequ pulls a Spark transitively; keep ours authoritative.
-    dependencyOverrides ++= Seq(
-      "org.apache.spark" %% "spark-core" % sparkV,
-      "org.apache.spark" %% "spark-sql" % sparkV
-    ),
+    crossScalaVersions := Seq(scala212, scala213),
+    // Scalafix OrganizeImports needs unused-import warnings; the flag is per-Scala-version.
+    scalacOptions += (if (scalaVersion.value.startsWith("2.13")) "-Wunused:imports"
+                      else "-Ywarn-unused-import"),
+    libraryDependencies ++= {
+      if (scalaVersion.value.startsWith("2.13"))
+        Seq(
+          "com.databricks" %% "databricks-connect" % "17.3.+" % Provided,
+          "com.github.pureconfig" %% "pureconfig" % "0.17.6"
+        )
+      else
+        Seq(
+          "org.apache.spark" %% "spark-core" % sparkV % Provided,
+          "org.apache.spark" %% "spark-sql" % sparkV % Provided,
+          "io.delta" %% "delta-spark" % deltaV,
+          "com.github.pureconfig" %% "pureconfig" % "0.17.6",
+          "org.scalatest" %% "scalatest" % "3.2.18" % Test,
+          // Spark needed at test runtime since main deps are Provided:
+          "org.apache.spark" %% "spark-core" % sparkV % Test,
+          "org.apache.spark" %% "spark-sql" % sparkV % Test
+        )
+    },
     Test / fork := true,
     Test / javaOptions ++= Seq(
       "--add-opens=java.base/java.lang=ALL-UNNAMED",
@@ -57,6 +68,8 @@ lazy val root = (project in file("."))
     }
   )
 
-semanticdbEnabled := true
+// Scalafix/semanticdb rides the 2.12 dev profile only; the pinned semanticdb compiler
+// plugin has no artifact for the 2.13 patch version the connect profile uses.
+semanticdbEnabled := !scalaVersion.value.startsWith("2.13")
 semanticdbVersion := scalafixSemanticdb.revision
 ThisBuild / scalafixDependencies += "com.github.liancheng" %% "organize-imports" % "0.6.0"
