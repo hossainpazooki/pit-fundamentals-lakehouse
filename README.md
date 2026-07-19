@@ -1,32 +1,27 @@
 # VANTAGE
 
 A point-in-time-correct financial-fundamentals lakehouse over the SEC Financial
-Statement Data Sets. Scala 2.12 / Spark 3.5 / Delta 3.x.
+Statement Data Sets. One source tree, two build profiles: Scala 2.12 / Spark 3.5 /
+Delta 3.x (local + tests) and Scala 2.13 / Databricks Connect 17.3 (serverless
+Databricks jobs).
 
 **The load-bearing property:** a query for *fundamentals as of date D* returns only
 what was **filed and accepted on or before D** — no lookahead, including across
 restatements. A later correction to a prior period never leaks backward into an
 as-of-D answer.
 
-**Scope:** entity-level (consolidated, no-coregistrant) facts. Segment and
-coregistrant breakouts are excluded by design at the silver layer and counted in run
-metrics; within this scope the natural key `(adsh, tag, version, ddate, qtrs, uom)`
-is unique — measured, not assumed, across every published FSDS quarter. Unique in 63
-of 68 data-bearing quarters; five 2011–2012 quarters each carry 1–5 keys where the
-same filing asserts **conflicting values**, and the DQ gate refuses those quarters
-whole rather than silently picking a winner (see the per-quarter metrics).
+**Scope:** entity-level (consolidated, no-coregistrant) facts, within which the
+natural key `(adsh, tag, version, ddate, qtrs, uom)` is unique — measured, not
+assumed, across every published FSDS quarter; quarters where that fails are refused
+whole by the DQ gate ([docs/SYSTEM.md](docs/SYSTEM.md)).
 
 The name is the property, not an acronym: a *vantage point* can't see past the
 horizon of D.
 
-## Architecture
+## How
 
-A three-layer medallion. The point-in-time boundary lives in the Gold layer, where
-validity intervals are ordered strictly by the SEC `accepted` timestamp (ties fall
-through to the data-derived pair `adsh, version` — a total order, never ingest order).
-Gold is a **pure rebuild**: full silver joined to an accumulated filing index
-(`SilverSubStore`, grown in lockstep with silver) — never a single batch's `sub`
-slice, which would silently drop every previously ingested filing's facts.
+A three-layer medallion whose point-in-time boundary lives in Gold: validity
+intervals ordered strictly by the SEC `accepted` timestamp, never ingest order.
 
 ```mermaid
 flowchart LR
@@ -46,138 +41,41 @@ flowchart LR
   G -. "PIT boundary" .- AO
 ```
 
-All transforms are pure `(DataFrame) => DataFrame`, so they unit-test without a cluster.
+Two guards hold the property up: **content-addressed batch identity** (a batch id is
+a SHA-256 over source bytes + schema version + code SHA + params, registered so any
+historical state is retrievable via Delta time-travel) and a **fail-closed DQ gate**
+(a constraint that *cannot be evaluated* denies, same as one that is violated —
+unevaluable never collapses into a pass). The full enforcement story, the
+properties-under-test table, and the stated limits: [docs/SYSTEM.md](docs/SYSTEM.md).
 
-## Two guards
-
-- **Content-addressed batch identity.** Each batch carries a `_batch_id` that is a
-  SHA-256 over the source bytes **and** the schema version, code SHA, and ingest
-  params — the input *and* the decision that produced the output. Every ingested
-  quarter is recorded in a batch registry keyed by that hash, so any historical
-  table state is reconstructable: identity is the hash, and Delta time-travel is the
-  **retrieval** mechanism. (Retrieval, not byte-for-byte replay.)
-
-- **Fail-closed-on-unevaluable DQ gate.** The gate denies not only when a constraint
-  is *violated*, but when a constraint *cannot be evaluated* — a missing required
-  column or empty input where rows are expected. A green result on an unevaluable
-  check is the silent-verification failure mode the gate exists to prevent. Denied
-  batches are quarantined to distinct lanes — `/rows` (structurally invalid),
-  `/detail` (constraint failures), `/unevaluable` (missing column / empty) — never
-  written to Silver.
-
-## Provenance posture
-
-**Tamper-evident, not signed.** Provenance stops at hash + Delta time-travel —
-hash-anchored and replayable. There is no attestation layer, by deliberate choice:
-the authority for "what was true as of D" is the external timestamp the SEC issues,
-not a reviewer's signature.
-
-## Properties under test
-
-The guarantees are pinned by property tests, not prose:
-
-| Property | Test |
-|---|---|
-| Byte change ⇒ new batch id; recorded Delta version retrieves the original rows | `BatchIdSpec` (§5) |
-| Gate returns `Unevaluable` on missing column / empty input; `Fail` on a violation | `DataQualityGateSpec` (§6) |
-| `as_of(D)` returns the original value for `T1 ≤ D < T2`, the restated value for `D ≥ T2` | `PitNoLookaheadSpec` (§7) |
-| The Gold temporal model is order-invariant (ingest order cannot change the Gold table) | `PitNoLookaheadSpec` (§7) |
-| Load-order independence at the tiebreak seam is tested with same-key restatements: an out-of-order correction through bronze→silver→gold changes no `as_of` answer; a committed control proves an ingest-ordered seam WOULD leak on the same fixture | `PipelineRestatementSpec` |
-| An `accepted` tie resolves by the documented data-derived tiebreak (`accepted, adsh, version`), never arrival order | `PipelineRestatementSpec` |
-| `uom` is part of the natural key: two units of one fact never collapse or restate each other | `PitNoLookaheadSpec`, `DataQualityGateSpec` |
-| Segment/coregistrant rows are scoped out of silver and gold, and counted | `PipelineSpec`, `TsvIngestSpec` |
-| Footnote-only rows (null `value`) quarantine to `/rows`; the batch still passes | `PipelineQuarantineSpec` |
-| SEC-format TSV → bronze → silver → gold composes to the exact entity-level Gold; re-ingest is idempotent | `TsvIngestSpec` |
-| Denied batches quarantine to distinct lanes without schema conflict | `PipelineQuarantineSpec` |
-
-## Build & test
+## Quick start
 
 ```bash
-sbt test       # unit transforms + the §5 / §6 / §7 property tests
-sbt assembly   # fat jar -> target/scala-2.12/vantage-assembly-*.jar
+sbt test                  # the property suite (2.12 profile)
+sbt assembly              # classic fat jar -> target/scala-2.12/
+sbt "++2.13.16 assembly"  # serverless jar  -> target/scala-2.13/
 ```
 
-Requires JDK 17 and Spark 3.5's Hadoop runtime. On Windows, set `HADOOP_HOME` to a
-directory containing `winutils.exe` + `hadoop.dll`.
-
-## Run
-
-`PIT_SOURCE_DIR` is the parent of quarter directories (`<source>/<quarter>/num.txt` +
-`sub.txt`, the layout of the unzipped [SEC Financial Statement Data
-Sets](https://www.sec.gov/dera/data/financial-statement-data-sets)); `PIT_QUARTERS` is
-a comma-separated quarter list.
-
-The run is two steps: `pit.Pipeline` ingests quarters through the **silver stage** (bronze,
-registry, DQ gate, silver + filing-index merges; one `run …` metrics line per quarter, with
-`wall_clock_ms`), then one `pit.gold.GoldRebuild` pass rebuilds gold from the whole lake.
-Rebuilding gold per quarter would be quadratic in lake size — and gold is a pure function of
-silver + the filing index, so once at the end is the correct shape, not a shortcut.
-
-```bash
-PIT_SOURCE_DIR=./data PIT_QUARTERS=2026q1 \
-PIT_BRONZE_ROOT=./lake/bronze PIT_SILVER_ROOT=./lake/silver \
-PIT_GOLD_ROOT=./lake/gold PIT_QUARANTINE_ROOT=./lake/quarantine \
-PIT_REGISTRY_PATH=./lake/registry \
-spark-submit --class pit.Pipeline target/scala-2.12/vantage-assembly-*.jar
-# then, once per backfill:
-spark-submit --class pit.gold.GoldRebuild target/scala-2.12/vantage-assembly-*.jar
-```
-
-`scripts/` holds the full-history backfill tooling: `fetch_sec_quarters.py` (polite,
-listing-verified SEC downloads), `backfill_driver.py` (one quarter per invocation, JSONL
-ledger, record-and-continue on halt), `make_uneval_fixture.py` (injected halt demo against a
-scratch lake), `recompute_metrics.py` (per-quarter metrics recomputed from run artifacts).
-
-The session timezone is pinned to `America/New_York` in the entrypoint: SEC `accepted`
-timestamps are US Eastern and zoneless, and parsing them in the machine's local zone
-would move the PIT boundary across machines.
-
-## Limits
-
-- **Entity-level facts only** — segment and coregistrant breakouts are scoped out at
-  silver (counted, not quarantined). Modeling them as first-class dimensions is future
-  work, not a small extension: it changes the natural key.
-- Quarterly batch ingest; no streaming.
-- US-GAAP / XBRL scope; no IFRS or non-XBRL filers.
-- Tamper-evident, not attested — provenance stops at hash + time-travel, by design.
-- Maintenance ops are **named, not built**: `OPTIMIZE`/Z-ORDER/`VACUUM` and
-  partition/cluster tuning appear in the spec's "at 100×" limits and remain future work.
-  The full-history corpus is tens of GB; the deliverable is correctness plus honest ops
-  metrics, nothing more.
+Two-step run — `pit.Pipeline` per quarter through silver, then one
+`pit.gold.GoldRebuild` pass. Config is the PIT_* contract, as env vars or as
+`KEY=VALUE` program args (the serverless form). Commands, Windows setup, and the
+Databricks bundle: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Status
 
-End-to-end: SEC TSVs → bronze → silver → gold, with both guards and the PIT model in
-place. **40 tests pass, and GitHub Actions runs the full suite + scalafmt/scalafix +
-fat-jar assembly on every push.**
+**40 tests green in CI · full 2009→present history published locally (63/69
+quarters ingested, 6 refused fail-closed with recomputed causes) · deployed and
+published on Databricks serverless, publish verified under a three-part
+write-audit-publish rule (2026-07-19).** The dated state of record is
+[docs/STATUS.md](docs/STATUS.md); per-quarter backfill metrics are in
+[docs/BACKFILL-METRICS.md](docs/BACKFILL-METRICS.md); the publish-verification
+record with verbatim outputs is
+[docs/GATE-B-WAP-EVIDENCE.md](docs/GATE-B-WAP-EVIDENCE.md).
 
-The restatement seam test (2026-07-07) surfaced two real defects, both fixed the same
-session: gold rebuilt per batch against only that batch's `sub` slice (silent history
-loss on any multi-batch lake — caught by the test *before* the full-history backfill
-ran through it), and `accepted`-tie ordering that fell to physical row order. The
-negative control was run both ways: the committed non-vacuity test stays in the suite,
-and an ephemeral `_ingest_ts`-ordered mutation of the production seam turned the suite
-red before being reverted.
+Claims here are kept at or behind what the tests and the real runs prove.
 
-**Validated against a real quarter** (2026q1: 3,690,955 `num` rows, 6,169 filings).
-The run reconciles against raw-file counts exactly: 2,185,031 rows scoped out
-(segment/coregistrant), 41,517 footnote-only rows quarantined, 1,464,407 entity-level
-facts in Gold — with zero decimal-cast failures and zero rows lost in the `sub` join.
-Spot-checked against the raw filing: Apple's Q1 FY2026 10-Q (`0000320193-26-000006`,
-accepted 2026-01-30) reports revenue of 143,756,000,000 in Gold, byte-equal to the
-raw `num.txt` value. Before the entity-level scope existed, the DQ gate correctly
-**fail-closed on this same quarter** (66% natural-key collisions, 3.8% null values) —
-the refusal, its metrics recomputed from the raw file, is what drove the scope
-decision.
+## Docs
 
-**Full 2009→present history, published run metrics** (2026-07-08): every published FSDS
-quarter ingested — 63 of 69 into silver/gold (181,351,169 bronze rows; 86,615,392 gold
-facts across 16,667 CIKs), 6 refused by the DQ gate with recomputed causes (2009q1 is
-published empty; five 2011–2012 quarters carry natural-key collisions with conflicting
-values). Per-quarter metrics, all recomputed from run artifacts and cross-checked against
-the run logs: [docs/BACKFILL-METRICS.md](docs/BACKFILL-METRICS.md). Idempotency (rerun +
-diff) and one registry time-travel reconstruction were re-executed, not asserted.
-
-A Databricks Asset Bundle (`databricks.yml`) is configured for the native deploy path
-but not yet deployed to a workspace. Claims here are kept at or behind what the tests
-and the real-quarter run prove.
+[docs/README.md](docs/README.md) is the index: what is authoritative
+([SYSTEM](docs/SYSTEM.md) · [STATUS](docs/STATUS.md) ·
+[DEVELOPMENT](docs/DEVELOPMENT.md)) and what is a point-in-time record.

@@ -3,7 +3,7 @@
 A point-in-time-correct SEC-fundamentals lakehouse. Scala 2.12.18 / Spark 3.5.1 /
 Delta 3.x. The load-bearing property: `as_of(D)` returns only what was **filed and
 accepted on or before D**, including across restatements — no lookahead. See
-`README.md` for the full framing and the claim ladder (respect it; don't upgrade
+`README.md` + `docs/SYSTEM.md` for the full framing and the claim ladder (respect it; don't upgrade
 claims past what the tests prove).
 
 ## Read these first (session records — LOCAL ONLY)
@@ -43,7 +43,7 @@ Hadoop runtime. On Windows, `winutils.exe` + `hadoop.dll` must be on `HADOOP_HOM
 
 `sbt test` runs the full property suite; `sbt assembly` builds the fat jar. CI (GitHub
 Actions) runs suite + scalafmt/scalafix + assembly on every push — that gate is the
-final word, never an assumption. Exact test count lives in `README.md` Status.
+final word, never an assumption. Exact test count lives in `docs/STATUS.md`.
 
 **Two build profiles, one source tree** (serverless port, 2026-07-19): 2.12 = classic
 Spark (local dev + the whole test suite); 2.13 = Databricks Connect 17.3 for serverless
@@ -61,7 +61,7 @@ Two steps by design (gold is a pure rebuild, done once — never per quarter):
 2. `pit.gold.GoldRebuild` — rebuilds gold from the whole lake, once.
 
 Config is env-driven (`PIT_SOURCE_DIR`, `PIT_*_ROOT`, `PIT_REGISTRY_PATH`,
-`PIT_QUARTERS` as a comma list — see `README.md` Run and `application.conf`). Session
+`PIT_QUARTERS` as a comma list — see `docs/DEVELOPMENT.md` and `application.conf`). Session
 timezone is pinned to `America/New_York` in the entrypoint; do not remove it — SEC
 `accepted` timestamps are zoneless US-Eastern and local-zone parsing moves the PIT
 boundary across machines.
