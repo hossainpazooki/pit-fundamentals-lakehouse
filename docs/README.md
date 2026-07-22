@@ -11,6 +11,13 @@ root README 2026-07-19, in the ATLAS docs convention.)
 | [`STATUS.md`](STATUS.md) | Gates, runs, deployment — the dated state of record (moved out of the README 2026-07-19). |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Build profiles (2.12 classic / 2.13 Connect), config contract, local + serverless run commands, `scripts/` tooling. |
 
+## Append-only ledgers (immutable entries; corrections are new dated entries)
+
+- [`learnings/`](learnings/LEARNINGS.md) — anchored, re-executable facts about
+  this repo and its integrations (rigor's learnings format:
+  `ts:`/`commit:`/`basis:`/`re-verify:` per entry, pointer-only index, gated
+  by rigor's `check-learnings.mjs`).
+
 ## Point-in-time records (historical; do not "fix" retroactively)
 
 - [`BACKFILL-METRICS.md`](BACKFILL-METRICS.md) — per-quarter metrics of the
