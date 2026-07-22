@@ -9,6 +9,12 @@ variables:
   quarters:
     description: Comma-separated quarter list (the PIT_QUARTERS contract)
     default: "2026q1"
+  dqx_data:
+    description: Volume path holding sub.txt + num.txt for the DQX bronze pre-gate
+    default: /Volumes/workspace/default/vantage/source/2026q1
+  dqx_json_out:
+    description: Volume path where the DQX gate writes its machine-readable JSON result
+    default: /Volumes/workspace/default/vantage/dqx-verify/results/gate.json
 
 # Serverless-only workspace (classic clusters rejected with INVALID_PARAMETER_VALUE).
 # Serverless JAR tasks: Scala 2.13 jar compiled against Databricks Connect (environment
@@ -57,6 +63,34 @@ resources:
               - PIT_QUARANTINE_ROOT=${var.lake_root}/quarantine
               - PIT_REGISTRY_PATH=${var.lake_root}/registry
               - PIT_QUARTERS=${var.quarters}
+
+    # DQX bronze pre-gate (scripts/dqx_bronze_gate.py, uploaded to the volume like
+    # the jar). Separate job by design: generic profile checks on raw TSVs, never
+    # part of the PIT pipeline's publish path. Exit semantics ARE the task status:
+    # a red gate (exit 1) or an unevaluable halt (exit 2) fails the task -- that is
+    # the fail-closed contract, not an error to engineer around.
+    vantage_dqx_bronze_gate:
+      name: vantage-dqx-bronze-gate
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - databricks-labs-dqx
+      tasks:
+        - task_key: run_dqx_gate
+          environment_key: default
+          spark_python_task:
+            # Bundle-relative: DABs rewrites this to the synced workspace file.
+            # A UC-volume absolute path here fails on serverless ("Cannot read the
+            # python file ...") even though the same file is readable via the
+            # files API -- unlike java_dependencies, which REQUIRE the volume path.
+            python_file: scripts/dqx_bronze_gate.py
+            parameters:
+              - "--data"
+              - ${var.dqx_data}
+              - "--json"
+              - ${var.dqx_json_out}
 
 targets:
   dev:

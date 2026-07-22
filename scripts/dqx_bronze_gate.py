@@ -315,4 +315,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Serverless spark_python_task runs this under an IPython-style harness that
+    # treats ANY SystemExit -- including SystemExit(0) -- as a workload failure
+    # (observed 2026-07-22: green gate, task FAILED with "SystemExit: 0").
+    # So: return normally on 0; raise only for red (1) / unevaluable (2), where
+    # a failed task IS the fail-closed contract. Local CLI behavior unchanged.
+    _code = main()
+    if _code != 0:
+        sys.exit(_code)

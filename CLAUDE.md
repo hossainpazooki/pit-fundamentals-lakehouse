@@ -93,7 +93,10 @@ lake, negative control captured pre-publish) with `check-effect-probe.mjs` clean
 The workspace (`dbc-a430129d-60c9`) is serverless-only, which forced the 2.13
 Connect port above; the 2026q1 publish reproduced local counts row-for-row.
 Auth note: `databricks auth login` from a non-interactive shell stores the OAuth
-token but writes no profile — prefix commands with `$env:DATABRICKS_HOST=...`.
+token but writes no profile — prefix commands with `$env:DATABRICKS_HOST=...`
+(Git Bash: `export DATABRICKS_HOST=...`). Git Bash also MANGLES `/Volumes/...`
+paths in `--var` args (MSYS rewrites them to `C:/Program Files/Git/Volumes/...`)
+— set `MSYS_NO_PATHCONV=1` or use PowerShell for bundle commands.
 Residual gaps: workspace `code_sha` is `unknown` (pass VANTAGE_CODE_SHA as a task
 arg in a follow-up); the far-future sentinel's stored instant differs across
 environments by the session-zone offset (unobservable before year 9999).
