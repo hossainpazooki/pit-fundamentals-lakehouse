@@ -23,3 +23,12 @@ docs/superpowers/
 .venv-dqx/
 *twin*/
 __pycache__/
+
+# Airflow orchestration (WS1, 2026-07-22) -- runtime state is machine-local,
+# never committed; the compose file, Dockerfile, .env.example, and dags/ ARE
+# tracked. Official apache/airflow compose writes logs/plugins/config here
+# relative to the compose file's own directory.
+orchestration/airflow/logs/
+orchestration/airflow/plugins/
+orchestration/airflow/config/
+orchestration/airflow/.env

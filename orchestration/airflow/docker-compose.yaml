@@ -1,0 +1,238 @@
+# VANTAGE WS1 -- Airflow orchestration (gap-closure sprint, 2026-07-22).
+#
+# Trimmed from the official apache/airflow:3.0.2 reference compose to
+# LocalExecutor per that image's Airflow-3.x split shape: postgres +
+# scheduler + apiserver + dag-processor + triggerer. No Celery, no worker,
+# no Redis, no Flower -- LocalExecutor runs tasks in the scheduler process.
+#
+# Sibling-container execution: DockerOperator (apache-airflow-providers-
+# docker, installed in Dockerfile) drives the HOST docker daemon via the
+# /var/run/docker.sock bind mount below to run Spark tasks in a sibling
+# apache/spark:3.5.3-scala2.12-java17-python3-ubuntu container -- confirmed
+# viable in the WS1 spike (see contract section 0/3):
+#   MSYS_NO_PATHCONV=1 docker run --rm -v //var/run/docker.sock:/var/run/docker.sock \
+#     docker:cli docker ps
+# returned the live host container list. This is NOT docker-in-docker; the
+# fat-Airflow-image-with-Spark-baked-in fallback described in the discovery
+# doc was never needed and is not built here.
+name: vantage-airflow
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    # INTEGRATION FIX (2026-07-22): api_auth.jwt_secret's config default is
+    # `{JWT_SECRET_KEY}`, a process-global generated via os.urandom(16) at
+    # Airflow configuration-module import time (configuration.py) -- it is
+    # NOT derived from core.secret_key (confirmed by inspecting both: with
+    # core.secret_key pinned identically across services, jwt_secret still
+    # differed per container). Each Airflow 3.x service process (scheduler,
+    # apiserver, ...) therefore minted its own random JWT signing key, so
+    # the scheduler's task-identity JWTs failed apiserver signature
+    # verification (InvalidSignatureError -> 403 Forbidden on every
+    # task-instances/{id}/run PATCH) and every task failed instantly before
+    # running any user code -- not a DAG bug, a missing shared secret across
+    # the compose's services. Fixed by pinning jwt_secret explicitly so all
+    # services share one signing key (per config.yml's own docstring: "when
+    # running more than 1 instances of API services, make sure all of them
+    # use the same jwt_secret"). core.secret_key is also pinned as a
+    # correctness belt-and-suspenders (it backs the webserver/Flask session,
+    # a separate mechanism) -- dev-only values; rotate for any non-local use.
+    AIRFLOW__CORE__SECRET_KEY: 'cYDEUMQdnVJvfLAbfamYsZH7Kz5qaUge-G4VYhs_SdI'
+    AIRFLOW__API_AUTH__JWT_SECRET: 'nZkK5PsoloyfzRsKxLkLAA=='
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    # Airflow 3.x split the webserver into apiserver + dag-processor; every
+    # component that executes tasks (scheduler, triggerer) talks to the
+    # apiserver's execution API rather than the DB directly -- required for
+    # LocalExecutor to work at all under the 3.x architecture, not optional.
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    # Backs the airflow-scheduler healthcheck below (curl localhost:8974/health)
+    # -- without this the scheduler's health endpoint never comes up.
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Airflow 3.0's default auth manager moved off FAB; pin back to
+    # FabAuthManager (apache-airflow-providers-fab, installed in Dockerfile)
+    # so _AIRFLOW_WWW_USER_USERNAME/PASSWORD and `airflow users create` keep
+    # working the same way the pre-3.0 compose did -- matches the official
+    # apache/airflow 3.0.2 reference compose (verified against
+    # https://airflow.apache.org/docs/apache-airflow/3.0.2/docker-compose.yaml).
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+    _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    # Consumed by dags/vantage_pipeline.py (Builder B) to build the
+    # spark-submit docker-run mounts/paths and image ref -- see contract
+    # section 0/4. Container-internal path once /vantage is mounted below.
+    VANTAGE_REPO_PATH: ${VANTAGE_REPO_PATH:-C:/Users/hossa/dev/vantage}
+    VANTAGE_DATA_PATH: ${VANTAGE_DATA_PATH:-C:/Users/hossa/dev/vantage-data}
+    VANTAGE_SPARK_IMAGE: ${VANTAGE_SPARK_IMAGE:-apache/spark:3.5.3-scala2.12-java17-python3-ubuntu}
+    VANTAGE_JAR_PATH: ${VANTAGE_JAR_PATH:-/vantage/target/scala-2.12/vantage-assembly-0.1.0.jar}
+  volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+    # Repo mount is read-only -- orchestration code must not depend on
+    # writing into it (the assembly jar lives here, already built via sbt on
+    # the host; nothing in this stack ever runs sbt).
+    - ${VANTAGE_REPO_PATH:-C:/Users/hossa/dev/vantage}:/vantage:ro
+    # Read-write, but see CLAUDE.md / WS1 contract hard rule: the
+    # lake-backfill/ and source/ subtrees under this mount are NEVER written
+    # by any DAG task -- only scratch-airflow/ is written, and that
+    # discipline is enforced by DAG convention (Builder B), not a technical
+    # guard at the mount level.
+    - ${VANTAGE_DATA_PATH:-C:/Users/hossa/dev/vantage-data}:/vantage-data
+    # Sock-mount to the HOST daemon -- confirmed viable in the WS1 spike (see
+    # header comment). Double-leading-slash form avoids Git-Bash/MSYS path
+    # mangling if anything ever shells this path out; compose itself talks
+    # Linux-style paths regardless of host OS.
+    - /var/run/docker.sock:/var/run/docker.sock
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # One-shot init: creates opt dirs, runs `airflow db migrate`, creates the
+  # dev admin user from _AIRFLOW_WWW_USER_USERNAME/PASSWORD (both handled by
+  # the base image's built-in /entrypoint when _AIRFLOW_DB_MIGRATE and
+  # _AIRFLOW_WWW_USER_CREATE are set -- this command block itself only does
+  # directory bootstrap/permissions, matching the official 3.0.2 reference
+  # compose). Other services wait on this via
+  # `condition: service_completed_successfully`.
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Airflow version:"
+        /entrypoint airflow version
+        echo
+        echo "Change ownership of files in shared volumes to ${AIRFLOW_UID:-50000}:0"
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,plugins,config} || true
+        echo
+        # INTEGRATION FIX (2026-07-22): Airflow 3.0.2 seeds zero default
+        # connections (no "airflow connections create-default-connections"
+        # equivalent runs implicitly, unlike older docs' assumption) -- the
+        # DAG's wait_for_source FileSensor uses fs_conn_id="fs_default",
+        # which does not exist out of the box and fails every sensor map
+        # index with AirflowNotFoundException: "The conn_id `fs_default`
+        # isn't defined". Create it here, idempotently, so a fresh `docker
+        # compose up` always has it before the DAG can run.
+        echo "Ensuring fs_default connection exists:"
+        airflow connections get fs_default >/dev/null 2>&1 || airflow connections add fs_default --conn-type fs
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    user: "0:0"
+
+  # Ad hoc `airflow <subcommand>` access, e.g.:
+  #   docker compose run --rm airflow-cli airflow dags trigger vantage_pipeline \
+  #     -c '{"lake_root": "/vantage-data/scratch-airflow/twin-lake"}'
+  # Not started by `docker compose up`; only runs via `run` (profiles: debug).
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c
+      - airflow
+    depends_on:
+      <<: *airflow-common-depends-on
+
+volumes:
+  postgres-db-volume:
