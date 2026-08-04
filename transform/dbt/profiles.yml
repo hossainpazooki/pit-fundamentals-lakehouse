@@ -1,0 +1,24 @@
+vantage:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: transform/dbt/target/vantage_dev.duckdb
+      threads: 4
+      extensions: [delta]
+      settings:
+        TimeZone: 'America/New_York'
+    full:
+      type: duckdb
+      path: transform/dbt/target/vantage_full.duckdb
+      threads: 4
+      extensions: [delta]
+      settings:
+        TimeZone: 'America/New_York'
+    ci:
+      type: duckdb
+      path: transform/dbt/target/vantage_ci.duckdb
+      threads: 4
+      extensions: [delta]
+      settings:
+        TimeZone: 'America/New_York'

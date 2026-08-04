@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: filing_coverage
+    description: >
+      As-of coverage mart. For each filer-period (cik, ddate, qtrs), reports
+      how many facts and distinct tags were visible as of the pipeline's
+      as_of_date, and the accepted-timestamp range of those visible facts.
+      This is an as-of SLICE, not a full-history view: it is built directly
+      from as_of_facts and therefore inherits the as_of_date variable. Facts
+      that existed at some point but were superseded (restated) before the
+      as-of instant are not counted here -- see restatement_freq for the
+      full-history restatement view.
+    columns:
+      - name: cik
+        description: SEC Central Index Key identifying the filer.
+        tests:
+          - not_null
+      - name: ddate
+        description: Period end date for the filed facts, as yyyymmdd (e.g. 20230331).
+      - name: qtrs
+        description: Number of quarters the reported value covers (0 for instants, 1 for a quarter, 4 for a full year, etc).
+      - name: fact_count
+        description: Count of facts (rows) visible in as_of_facts for this filer-period as of the as_of_date.
+        tests:
+          - not_null
+      - name: distinct_tags
+        description: Count of distinct XBRL tags visible in as_of_facts for this filer-period as of the as_of_date.
+      - name: first_accepted
+        description: Earliest SEC acceptance timestamp among the facts visible for this filer-period as of the as_of_date.
+      - name: last_accepted
+        description: Latest SEC acceptance timestamp among the facts visible for this filer-period as of the as_of_date.

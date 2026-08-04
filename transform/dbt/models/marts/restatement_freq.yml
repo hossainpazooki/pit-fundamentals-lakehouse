@@ -1,0 +1,47 @@
+version: 2
+
+models:
+  - name: restatement_freq
+    description: >
+      Full-history restatement-frequency mart. Grain is the natural key
+      (cik, tag, ddate, qtrs, uom). A restatement is a NEW filing -- a
+      distinct adsh accepted at a later time -- for the same natural key;
+      this mart counts, for every natural key, how many such versions have
+      ever existed and emits only the keys that were restated at least once
+      (version_count > 1). This mart is built from the full unfiltered
+      version history of stg_gold and does NOT honor as_of_date -- it is not
+      a point-in-time view. An as-of slice (as_of_facts) shows exactly one
+      version per key by construction, so restatement history is
+      structurally invisible there; that is the reason this mart reads from
+      stg_gold directly instead of from as_of_facts.
+    columns:
+      - name: cik
+        description: SEC Central Index Key identifying the filer. Part of the natural key.
+        tests:
+          - not_null
+      - name: tag
+        description: XBRL tag (fact name) being reported. Part of the natural key.
+      - name: ddate
+        description: Period end date for the fact, as an integer yyyymmdd. Part of the natural key.
+      - name: qtrs
+        description: Number of quarters the reported value covers (0 for instantaneous facts). Part of the natural key.
+      - name: uom
+        description: Unit of measure for the reported value. Part of the natural key.
+      - name: version_count
+        description: >
+          Total number of distinct versions (rows) ever recorded in
+          stg_gold for this natural key, across all restatements. Always
+          greater than 1 in this mart, since keys with exactly one version
+          were never restated and are excluded.
+        tests:
+          - not_null
+      - name: distinct_adsh
+        description: >
+          Number of distinct accession numbers (filings) that have reported
+          a value for this natural key. Each restatement is a new adsh, so
+          this is the count of distinct filings contributing to
+          version_count.
+      - name: first_accepted
+        description: Earliest SEC acceptance timestamp among all versions of this natural key.
+      - name: last_accepted
+        description: Most recent SEC acceptance timestamp among all versions of this natural key -- i.e. the latest restatement.

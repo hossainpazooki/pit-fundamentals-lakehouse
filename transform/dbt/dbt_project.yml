@@ -1,0 +1,28 @@
+name: 'vantage'
+version: '1.0.0'
+config-version: 2
+
+profile: 'vantage'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+
+vars:
+  # gold_path: filesystem path to the gold Delta table. NO default here on
+  # purpose -- every invocation must pass it explicitly via --vars so the
+  # target (dev / full / ci) and the gold_path always move together.
+  as_of_date: '2026-03-31'
+
+models:
+  vantage:
+    staging:
+      +materialized: view
+    serving:
+      +materialized: view
+    marts:
+      +materialized: table

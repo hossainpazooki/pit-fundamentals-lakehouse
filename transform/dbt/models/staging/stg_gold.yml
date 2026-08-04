@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: stg_gold
+    description: >
+      The only delta_scan() seam in this project. A pure passthrough of the
+      PIT gold table at var('gold_path'): no filtering, no renaming, no
+      casting. Every other model reaches gold only through ref('stg_gold').
+      Materialized as a view (project default for the staging folder).
+    columns:
+      - name: cik
+        description: SEC Central Index Key identifying the filer.
+        tests:
+          - not_null
+      - name: tag
+        description: XBRL tag (fact name) for the reported value.
+        tests:
+          - not_null
+      - name: ddate
+        description: Period end date for the fact, as an integer yyyymmdd (e.g. 20230331).
+      - name: qtrs
+        description: Number of quarters the reported value covers (0 for instantaneous facts, 1/2/4 etc. for durations).
+      - name: uom
+        description: Unit of measure for the reported value (e.g. USD, shares).
+      - name: value
+        description: The reported numeric fact value.
+      - name: accepted
+        description: Timestamp (with time zone) when the SEC accepted the filing that produced this row.
+      - name: adsh
+        description: SEC accession number identifying the filing.
+      - name: version
+        description: Taxonomy version string associated with the reported tag.
+      - name: valid_from
+        description: Timestamp (with time zone) from which this row is visible in the PIT natural-key history.
+        tests:
+          - not_null
+      - name: valid_to
+        description: >
+          Timestamp (with time zone) at which this row stops being visible.
+          Still-open rows carry the sentinel 9999-12-31 05:00:00-05.
+        tests:
+          - not_null

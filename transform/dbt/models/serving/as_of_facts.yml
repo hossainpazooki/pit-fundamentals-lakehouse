@@ -1,0 +1,53 @@
+version: 2
+
+models:
+  - name: as_of_facts
+    description: >
+      The point-in-time serving view. Returns the lake as it was KNOWN at
+      as_of_date -- i.e. the single row per natural key (cik, tag, ddate,
+      qtrs, uom) that was visible at the as-of instant (as_of_date 23:59:59
+      America/New_York), reconciled across all restatements up to that
+      instant. No row accepted after the as-of instant can appear here.
+      Changing as_of_date (a dbt var) is the only supported way to move the
+      PIT boundary -- do not filter this model further downstream to fake a
+      different as-of date; rerun with a different var instead.
+    columns:
+      - name: cik
+        description: SEC Central Index Key identifying the filer.
+        tests:
+          - not_null
+      - name: tag
+        description: XBRL us-gaap (or custom) tag identifying the reported concept.
+      - name: ddate
+        description: Period end date for the reported value, as an integer yyyymmdd.
+      - name: qtrs
+        description: Number of quarters covered by the value (0 = instant, 1 = quarterly, 4 = annual, etc).
+      - name: uom
+        description: Unit of measure for value (e.g. USD, shares).
+      - name: value
+        description: The reported numeric value.
+      - name: accepted
+        description: >
+          Timestamp (with time zone) the SEC accepted the filing that
+          produced this row. Never later than the as-of instant for any row
+          returned by this model -- that is the no-lookahead invariant
+          enforced by assert_no_lookahead.
+      - name: adsh
+        description: SEC accession number identifying the filing this row came from.
+      - name: version
+        description: Taxonomy version string associated with the filing.
+      - name: valid_from
+        description: >
+          Timestamp (with time zone) from which this row became the visible
+          version of its natural key. Inclusive lower bound of the
+          visibility window.
+        tests:
+          - not_null
+      - name: valid_to
+        description: >
+          Timestamp (with time zone) at which this row stopped being the
+          visible version of its natural key (sentinel 9999-12-31 05:00:00-05
+          if still open). Exclusive upper bound of the visibility window --
+          the window is half-open (valid_from <= as_of < valid_to) so that a
+          row's last visible instant and its successor's first visible
+          instant never overlap.
