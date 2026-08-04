@@ -18,3 +18,28 @@ jobs:
         run: sbt test
       - name: Assembly (fat jar)
         run: sbt assembly
+
+  # WS2: the dbt serving layer, exercised against a Delta table that CI builds
+  # itself by running the PRODUCTION pipeline code over synthesized filings. The
+  # SEC source data lives outside the repo and cannot be checked in, so the
+  # fixture's INPUT is synthetic -- the code path that writes gold is the real
+  # one (Pipeline.runFromFrames -> GoldRebuild.rebuild). See docs/adr/0002.
+  # Runs in parallel with `build`; it recompiles test sources rather than
+  # serializing behind that job.
+  dbt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17', cache: sbt }
+      - uses: sbt/setup-sbt@v1
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install dbt (pinned; the project uses no dbt packages, so no `dbt deps`)
+        run: pip install dbt-core==1.12.0 dbt-duckdb==1.10.1
+      - name: Build the Delta gold fixture via the production pipeline code
+        run: sbt "Test/runMain pit.tools.DbtFixtureMain $GITHUB_WORKSPACE/ci-fixture"
+      - name: dbt build (4 models + the 3 PIT invariant tests)
+        run: |
+          dbt build --project-dir transform/dbt --profiles-dir transform/dbt \
+            --target ci --vars "{gold_path: \"$GITHUB_WORKSPACE/ci-fixture/gold\"}"
