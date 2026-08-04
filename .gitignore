@@ -24,6 +24,13 @@ docs/superpowers/
 *twin*/
 __pycache__/
 
+# dbt transform layer (WS2, 2026-08-03) -- the venv is machine-local like
+# .venv-dqx. Python 3.14's venv writes its own .gitignore containing `*`, so
+# .venv-dbt/ already self-ignores; this entry is here so the intent is visible
+# in the repo rather than resting on that behaviour. dbt's own runtime output
+# (target/, logs/, .user.yml) is ignored by transform/dbt/.gitignore.
+.venv-dbt/
+
 # Airflow orchestration (WS1, 2026-07-22) -- runtime state is machine-local,
 # never committed; the compose file, Dockerfile, .env.example, and dags/ ARE
 # tracked. Official apache/airflow compose writes logs/plugins/config here
