@@ -1,4 +1,4 @@
-# VANTAGE
+# VANTAGE — the viewpoint
 
 **A point-in-time-correct financial-fundamentals lakehouse over the SEC Financial
 Statement Data Sets** — built so that *"what did we know on date D?"* has exactly one
@@ -9,6 +9,14 @@ answer, and that answer never quietly changes.
 ![Spark](https://img.shields.io/badge/Spark-3.5%20%2F%20Connect-e25a1c)
 ![Delta](https://img.shields.io/badge/Delta%20Lake-3.x-00add4)
 ![Databricks](https://img.shields.io/badge/Databricks-serverless-ff3621)
+
+> **One of three terms.** **VANTAGE** fixes the viewpoint — where you stand when you
+> read, as of date D. [**PARALLAX**](https://github.com/hossainpazooki/pit-revision-examiner)
+> measures what shifts between viewpoints. **BASELINE** is the separation that makes two
+> viewpoints comparable: known before the measurement, rigid during it. A shift becomes a
+> measurement only across a baseline you can cite.
+>
+> → [**the baseline**](https://hossainpazooki.github.io/baseline)
 
 One source tree, two build profiles: Scala 2.12 / classic Spark (local + the test
 suite) and Scala 2.13 / Databricks Connect (serverless Databricks jobs).
@@ -79,32 +87,34 @@ Scope is entity-level (consolidated) facts, within which the natural key is uniq
 story, the properties-under-test table, and the stated limits:
 [docs/SYSTEM.md](docs/SYSTEM.md).
 
+Around that core the pipeline is orchestrated and served: an Airflow DAG expresses
+the real shape (silver per quarter in sequence, gold rebuilt **once**, then audit,
+with publish structurally unreachable when the audit is red or unevaluable), and a
+dbt-duckdb layer over gold provides an as-of serving view and marts whose PIT
+invariants are tested in CI. Both are exercised against a mutated twin, not only a
+happy path.
+
 ## Proven, not promised
 
-Every claim below is an immutable record with its evidence linked — none of it is
-self-reported success.
+Nothing in this repo is credited on a self-reported success. Every claim is an
+immutable record with its evidence linked — a real quarter reconciling against raw
+file counts, the full 2009→present backfill with its refusals, a seam test shown able
+to fail, and a Databricks publish verified as an *effect* rather than an exit code.
 
-| Claim | Evidence |
-|---|---|
-| A real quarter reconciles against raw-file counts **exactly** — 3,690,955 rows in, every row accounted for (scoped out / quarantined / landed in Gold), and Apple's 10-Q revenue byte-equal to raw `num.txt` | [docs/STATUS.md](docs/STATUS.md) |
-| Full 2009→present history: every published FSDS quarter processed; quarters carrying conflicting-value key collisions are **refused whole, fail-closed**, with causes recomputed from raw files | [docs/BACKFILL-METRICS.md](docs/BACKFILL-METRICS.md) |
-| The restatement seam test can actually fail: a deliberately broken seam turns the suite red, and a committed negative control keeps the fixture's discriminating power pinned | [docs/STATUS.md](docs/STATUS.md) |
-| The Databricks publish was verified as an **effect**, not an exit code — audit green on candidate *and* published tables, the same audit red on a corrupted twin to the exact planted count (429,949), consumer probe + pre-publish negative control | [docs/GATE-B-WAP-EVIDENCE.md](docs/GATE-B-WAP-EVIDENCE.md) |
-| The same code publishes identically on independent compute: the serverless run reproduced the local run **row-for-row**, with identical source hashes in both registries | [docs/GATE-B-WAP-EVIDENCE.md](docs/GATE-B-WAP-EVIDENCE.md) |
+The claims and their evidence: [docs/STATUS.md](docs/STATUS.md).
 
-The publish gate is a write-audit-publish shape where a publish is *credited* only
-when all three legs hold — an audit that has never been seen red proves nothing:
+## What the guarantee covers — and what it doesn't
 
-```mermaid
-flowchart LR
-  C["staged candidate"] -->|"audit"| G{"green?"}
-  TW["mutated twin<br/>(known-bad copy)"] -->|"<b>same</b> audit"| R{"red?"}
-  G -->|yes| P["publish"]
-  R -->|"yes — the audit<br/>can actually fail"| P
-  P --> PR["consumer-path probe<br/>+ negative control captured<br/><b>before</b> the publish"]
-  PR -->|"probe passes · control failed"| CR(["publish credited"])
-  G -.->|"unevaluable"| H(["halt — never<br/>coerced to pass"])
-```
+The no-lookahead property is scoped to **the gold model**: `as_of(D)` returns only
+what was accepted on or before D, across restatements. It is deliberately *not* an
+end-to-end guarantee through the ingest seam, and this README does not claim one.
+
+That boundary is why the sibling repo exists.
+[PARALLAX](https://github.com/hossainpazooki/pit-revision-examiner) is an adversarial
+consumer: it reads published gold through the as-of interface only, treats this repo
+as unproven, and re-verifies the point-in-time invariants at read time with its own
+gate — one that has to be shown red on a planted twin before any of its results
+count. A producer's guarantee checked only by the producer is a guarantee on trust.
 
 ## Quick start
 
@@ -123,9 +133,12 @@ Databricks bundle: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 [docs/README.md](docs/README.md) is the index: what is authoritative
 ([SYSTEM](docs/SYSTEM.md) · [STATUS](docs/STATUS.md) — the dated state of record,
-gates and runs · [DEVELOPMENT](docs/DEVELOPMENT.md)) and what is a point-in-time
-record ([BACKFILL-METRICS](docs/BACKFILL-METRICS.md) ·
-[GATE-B-WAP-EVIDENCE](docs/GATE-B-WAP-EVIDENCE.md)).
+gates, runs and the claims table · [DEVELOPMENT](docs/DEVELOPMENT.md) ·
+[adr/](docs/adr/README.md)) and what is a point-in-time record
+([BACKFILL-METRICS](docs/BACKFILL-METRICS.md) ·
+[GATE-B-WAP-EVIDENCE](docs/GATE-B-WAP-EVIDENCE.md) ·
+[AIRFLOW-ORCHESTRATION-EVIDENCE](docs/AIRFLOW-ORCHESTRATION-EVIDENCE.md) ·
+[DBT-EVIDENCE](docs/DBT-EVIDENCE.md)).
 
 Claims everywhere in this repo are kept at or behind what the tests and the real
 runs prove.

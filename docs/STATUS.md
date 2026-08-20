@@ -13,7 +13,35 @@ never an assumption. **40 tests pass.**
 | **Gate A — real quarter** | 2026q1 end-to-end against raw-file counts | **Closed 2026-07-03** — reconciles exactly (details below) | local session records |
 | **Seam test + full history** | Same-key restatement seam through the production path; 2009→present backfill | **Done 2026-07-08** — 2 real defects caught + fixed; 63/69 quarters ingested, 6 refused with recomputed causes | [BACKFILL-METRICS.md](BACKFILL-METRICS.md) |
 | **Gate B — Databricks publish** | Serverless deploy + write-audit-publish verification of the 2026q1 publish | **Credited 2026-07-19** — three-part rule green end-to-end | [GATE-B-WAP-EVIDENCE.md](GATE-B-WAP-EVIDENCE.md) |
+| **WS1 — local orchestration** | Airflow 3.0.2 over the real pipeline (mapped sequential silver, one gold rebuild, zero-retry audit, publish structurally unreachable on a red audit) | **Green 2026-07-22** — green leg 12/12 tasks; twin leg audit RED with `A1 == 10,217` exactly; unevaluable leg exit 2; publish `upstream_failed` on both red legs; backfill rerun idempotent | [AIRFLOW-ORCHESTRATION-EVIDENCE.md](AIRFLOW-ORCHESTRATION-EVIDENCE.md) · [ADR-0001](adr/0001-airflow-orchestration.md) |
 | **WS2 — dbt serving layer** | dbt-duckdb over gold: as-of serving view + 2 marts, 3 PIT invariant tests, CI job on a pipeline-built fixture | **Green 2026-08-03** — `PASS=17` on `dev` and `ci`; `assert_as_of_key_unique` proven red on a mutated twin (planted 7 → `FAIL 7`). `full` target not yet run; the other 2 tests have no mutator | [DBT-EVIDENCE.md](DBT-EVIDENCE.md) · [ADR-0002](adr/0002-dbt-transform-layer.md) |
+
+## Claims and their evidence
+
+Moved out of the root README 2026-08-20 (README carries essentials only; evidence tables live here). Every row is an immutable record with its evidence linked — none of it is self-reported success.
+
+| Claim | Evidence |
+|---|---|
+| A real quarter reconciles against raw-file counts **exactly** — 3,690,955 rows in, every row accounted for (scoped out / quarantined / landed in Gold), and Apple's 10-Q revenue byte-equal to raw `num.txt` | Gate A section below |
+| Full 2009→present history: every published FSDS quarter processed; quarters carrying conflicting-value key collisions are **refused whole, fail-closed**, with causes recomputed from raw files | [BACKFILL-METRICS.md](BACKFILL-METRICS.md) |
+| The restatement seam test can actually fail: a deliberately broken seam turns the suite red, and a committed negative control keeps the fixture's discriminating power pinned | Seam-test section below |
+| The Databricks publish was verified as an **effect**, not an exit code — audit green on candidate *and* published tables, the same audit red on a corrupted twin to the exact planted count (429,949), consumer probe + pre-publish negative control | [GATE-B-WAP-EVIDENCE.md](GATE-B-WAP-EVIDENCE.md) |
+| The same code publishes identically on independent compute: the serverless run reproduced the local run **row-for-row**, with identical source hashes in both registries | [GATE-B-WAP-EVIDENCE.md](GATE-B-WAP-EVIDENCE.md) |
+
+The publish gate is a write-audit-publish shape where a publish is *credited* only
+when all three legs hold — an audit that has never been seen red proves nothing:
+
+```mermaid
+flowchart LR
+  C["staged candidate"] -->|"audit"| G{"green?"}
+  TW["mutated twin<br/>(known-bad copy)"] -->|"<b>same</b> audit"| R{"red?"}
+  G -->|yes| P["publish"]
+  R -->|"yes — the audit<br/>can actually fail"| P
+  P --> PR["consumer-path probe<br/>+ negative control captured<br/><b>before</b> the publish"]
+  PR -->|"probe passes · control failed"| CR(["publish credited"])
+  G -.->|"unevaluable"| H(["halt — never<br/>coerced to pass"])
+```
+
 
 ## Gate A — validated against a real quarter (2026q1)
 
