@@ -35,3 +35,5 @@ a dated superseding entry with a `kills:` reference is appended instead.
   — a clean exit fails the task; gate returns normally on 0.
 - [2026-07-22 — Git Bash MSYS mangles /Volumes paths in --var args](2026-07-22-msys-mangles-volume-paths-in-var-args.md)
   — rewritten to `C:/Program Files/Git/Volumes/...`; `MSYS_NO_PATHCONV=1` or PowerShell.
+- [2026-08-20 — gold is path-addressed Delta on a UC volume, never a UC table](2026-08-20-gold-is-path-addressed-never-a-uc-table.md)
+  — no `saveAsTable`/`CREATE TABLE`, no catalog/schema target; a catalog-reading consumer has nothing to bind to.
