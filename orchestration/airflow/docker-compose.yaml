@@ -66,8 +66,8 @@ x-airflow-common: &airflow-common
     # Consumed by dags/vantage_pipeline.py (Builder B) to build the
     # spark-submit docker-run mounts/paths and image ref -- see contract
     # section 0/4. Container-internal path once /vantage is mounted below.
-    VANTAGE_REPO_PATH: ${VANTAGE_REPO_PATH:-C:/Users/hossa/dev/vantage}
-    VANTAGE_DATA_PATH: ${VANTAGE_DATA_PATH:-C:/Users/hossa/dev/vantage-data}
+    VANTAGE_REPO_PATH: ${VANTAGE_REPO_PATH:?set VANTAGE_REPO_PATH in .env, see .env.example}
+    VANTAGE_DATA_PATH: ${VANTAGE_DATA_PATH:?set VANTAGE_DATA_PATH in .env, see .env.example}
     VANTAGE_SPARK_IMAGE: ${VANTAGE_SPARK_IMAGE:-apache/spark:3.5.3-scala2.12-java17-python3-ubuntu}
     VANTAGE_JAR_PATH: ${VANTAGE_JAR_PATH:-/vantage/target/scala-2.12/vantage-assembly-0.1.0.jar}
   volumes:
@@ -78,13 +78,13 @@ x-airflow-common: &airflow-common
     # Repo mount is read-only -- orchestration code must not depend on
     # writing into it (the assembly jar lives here, already built via sbt on
     # the host; nothing in this stack ever runs sbt).
-    - ${VANTAGE_REPO_PATH:-C:/Users/hossa/dev/vantage}:/vantage:ro
+    - ${VANTAGE_REPO_PATH:?set VANTAGE_REPO_PATH in .env, see .env.example}:/vantage:ro
     # Read-write, but see CLAUDE.md / WS1 contract hard rule: the
     # lake-backfill/ and source/ subtrees under this mount are NEVER written
     # by any DAG task -- only scratch-airflow/ is written, and that
     # discipline is enforced by DAG convention (Builder B), not a technical
     # guard at the mount level.
-    - ${VANTAGE_DATA_PATH:-C:/Users/hossa/dev/vantage-data}:/vantage-data
+    - ${VANTAGE_DATA_PATH:?set VANTAGE_DATA_PATH in .env, see .env.example}:/vantage-data
     # Sock-mount to the HOST daemon -- confirmed viable in the WS1 spike (see
     # header comment). Double-leading-slash form avoids Git-Bash/MSYS path
     # mangling if anything ever shells this path out; compose itself talks

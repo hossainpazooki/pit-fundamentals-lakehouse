@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -27,7 +28,8 @@ ADD_OPENS = (
     "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED "
     "--add-opens=java.base/java.util=ALL-UNNAMED"
 )
-HADOOP_HOME = "C:\\Users\\hossa\\hadoop"
+# Hadoop runtime for Windows (winutils.exe + hadoop.dll). $HADOOP_HOME wins; else ~/hadoop.
+HADOOP_HOME = os.environ.get("HADOOP_HOME") or os.path.join(os.path.expanduser("~"), "hadoop")
 RUN_LINE = re.compile(r"run batch_id=")  # sbt prefixes '[info] ' — do not anchor
 
 
@@ -95,8 +97,11 @@ def classify(exit_code: int, log_text: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-root", default="C:/Users/hossa/dev/vantage-data")
-    ap.add_argument("--repo", default="C:/Users/hossa/dev/vantage")
+    ap.add_argument("--data-root", default=os.environ.get("VANTAGE_DATA_PATH"),
+                    required="VANTAGE_DATA_PATH" not in os.environ,
+                    help="data root (default: $VANTAGE_DATA_PATH; required when unset)")
+    ap.add_argument("--repo", default=str(Path(__file__).resolve().parents[1]),
+                    help="repo root (default: the repo this script lives in)")
     ap.add_argument("--quarters", default="", help="comma list; default = every extracted source quarter")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--gold-rebuild", action="store_true", help="run the single GoldRebuild pass and exit")

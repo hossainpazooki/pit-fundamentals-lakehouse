@@ -37,7 +37,7 @@ Also needs Spark's Hadoop runtime. On Windows, `winutils.exe` + `hadoop.dll` mus
 
 - **Windows (PowerShell)** — env is per-invocation, so prefix every sbt call:
   ```powershell
-  $env:HADOOP_HOME='C:\Users\hossa\hadoop'; $env:PATH="$env:HADOOP_HOME\bin;$env:PATH"; sbt test
+  $env:HADOOP_HOME='C:\path\to\hadoop'; $env:PATH="$env:HADOOP_HOME\bin;$env:PATH"; sbt test
   ```
   (sbt is at `AppData/Local/Coursier/data/bin/sbt.bat`. Run sbt via PowerShell, not Git
   Bash — it isn't on the Bash PATH.)

@@ -15,6 +15,7 @@ Usage: python scripts/idempotency_diff.py --pre-silver 62 --pre-gold 0 \
 """
 
 import argparse
+import os
 import json
 import sys
 from pathlib import Path
@@ -53,7 +54,9 @@ def versioned(con, path, version, name):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-root", default="C:/Users/hossa/dev/vantage-data")
+    ap.add_argument("--data-root", default=os.environ.get("VANTAGE_DATA_PATH"),
+                    required="VANTAGE_DATA_PATH" not in os.environ,
+                    help="data root (default: $VANTAGE_DATA_PATH; required when unset)")
     ap.add_argument("--lake", default="lake-backfill")
     ap.add_argument("--pre-silver", type=int, required=True)
     ap.add_argument("--pre-gold", type=int, required=True)

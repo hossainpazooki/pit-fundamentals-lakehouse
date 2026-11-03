@@ -25,6 +25,7 @@ Requires: pip install duckdb (delta extension auto-installed on first use).
 """
 
 import argparse
+import os
 import json
 import re
 import sys
@@ -80,7 +81,9 @@ def per_batch_counts(con, table: Path, batch_col: str, where: str = "TRUE"):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-root", default="C:/Users/hossa/dev/vantage-data")
+    ap.add_argument("--data-root", default=os.environ.get("VANTAGE_DATA_PATH"),
+                    required="VANTAGE_DATA_PATH" not in os.environ,
+                    help="data root (default: $VANTAGE_DATA_PATH; required when unset)")
     ap.add_argument("--lake", default="lake-backfill")
     ap.add_argument("--ledger", default="backfill-ledger.jsonl")
     ap.add_argument("--out", default="")

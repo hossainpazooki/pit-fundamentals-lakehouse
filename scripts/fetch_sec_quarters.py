@@ -7,11 +7,12 @@ extracted), and atomic (.part rename). Only num.txt and sub.txt are extracted --
 pipeline consumes nothing else.
 
 Usage:
-    python scripts/fetch_sec_quarters.py [--data-root C:/Users/hossa/dev/vantage-data]
+    python scripts/fetch_sec_quarters.py [--data-root <dir>]   (default: $VANTAGE_DATA_PATH)
                                          [--quarters 2009q1,2009q2] [--list-only]
 """
 
 import argparse
+import os
 import re
 import shutil
 import sys
@@ -90,7 +91,9 @@ def extract(zip_path: Path, source_dir: Path, q: str) -> None:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-root", default="C:/Users/hossa/dev/vantage-data")
+    ap.add_argument("--data-root", default=os.environ.get("VANTAGE_DATA_PATH"),
+                    required="VANTAGE_DATA_PATH" not in os.environ,
+                    help="data root (default: $VANTAGE_DATA_PATH; required when unset)")
     ap.add_argument("--quarters", default="", help="comma list; default = all quarters on SEC's listing")
     ap.add_argument("--list-only", action="store_true", help="print the SEC-listed quarters and exit")
     args = ap.parse_args()

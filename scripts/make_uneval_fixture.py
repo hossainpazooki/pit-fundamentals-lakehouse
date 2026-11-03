@@ -13,12 +13,15 @@ real backfill lake is never polluted:
 """
 
 import argparse
+import os
 from pathlib import Path
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-root", default="C:/Users/hossa/dev/vantage-data")
+    ap.add_argument("--data-root", default=os.environ.get("VANTAGE_DATA_PATH"),
+                    required="VANTAGE_DATA_PATH" not in os.environ,
+                    help="data root (default: $VANTAGE_DATA_PATH; required when unset)")
     ap.add_argument("--source-quarter", default="2009q1")
     args = ap.parse_args()
 

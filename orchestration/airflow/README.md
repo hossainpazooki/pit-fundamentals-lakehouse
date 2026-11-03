@@ -141,7 +141,7 @@ docker compose exec airflow-apiserver airflow dags trigger vantage_pipeline \
 ## Where things live
 
 - Scratch lake root (never `lake-backfill/` or `source/`):
-  `C:/Users/hossa/dev/vantage-data/scratch-airflow/` -- see
+  `$VANTAGE_DATA_PATH/scratch-airflow/` (the host data root from `.env`) -- see
   `docs/adr/0001-airflow-orchestration.md` and the DAG module docstring for
   the full `lake/` / `twin-lake/` / uneval-fixture layout.
 - Evidence doc: `docs/AIRFLOW-ORCHESTRATION-EVIDENCE.md`.

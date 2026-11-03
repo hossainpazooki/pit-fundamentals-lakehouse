@@ -158,8 +158,19 @@ DAG_ID = "vantage_pipeline"
 # mount). These are NOT the same as the /vantage and /vantage-data paths
 # below, which are container-internal mount targets inside the Airflow
 # worker container itself.
-VANTAGE_REPO_PATH_HOST = os.environ.get("VANTAGE_REPO_PATH", "C:/Users/hossa/dev/vantage")
-VANTAGE_DATA_PATH_HOST = os.environ.get("VANTAGE_DATA_PATH", "C:/Users/hossa/dev/vantage-data")
+# No workstation default: both come from .env (see .env.example) and a missing one is a
+# clear parse-time error rather than a mount of somebody else's home directory.
+def _host_path(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(
+            f"{name} is not set; copy orchestration/airflow/.env.example to .env and set it"
+        )
+    return value
+
+
+VANTAGE_REPO_PATH_HOST = _host_path("VANTAGE_REPO_PATH")
+VANTAGE_DATA_PATH_HOST = _host_path("VANTAGE_DATA_PATH")
 
 VANTAGE_SPARK_IMAGE = os.environ.get(
     "VANTAGE_SPARK_IMAGE", "apache/spark:3.5.3-scala2.12-java17-python3-ubuntu"

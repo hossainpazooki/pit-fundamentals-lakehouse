@@ -23,8 +23,8 @@ retry/backoff) rather than fail fast. This gate does not work around that hang
 risk, out of scope for this gate to engineer around.
 
 Usage:
-  C:/Users/hossa/dev/vantage/.venv-dqx/Scripts/python.exe scripts/dqx_bronze_gate.py \
-      --data <path> [--quarter <q>] [--json <out.json>]
+  # from the repo root:
+  .venv-dqx/Scripts/python.exe scripts/dqx_bronze_gate.py \n      --data <path> [--quarter <q>] [--json <out.json>]
 """
 
 import argparse
@@ -92,7 +92,7 @@ def run_checks(data: Path):
         return
 
     # Spark session setup (verified in spike) -- must happen before any read.
-    os.environ.setdefault("HADOOP_HOME", r"C:\Users\hossa\hadoop")
+    os.environ.setdefault("HADOOP_HOME", os.path.join(os.path.expanduser("~"), "hadoop"))
     os.environ["PATH"] = os.environ["HADOOP_HOME"] + r"\bin;" + os.environ["PATH"]
 
     try:

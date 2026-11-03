@@ -18,14 +18,14 @@ Exit codes:
      available data rows, OR --data is missing sub.txt / has zero data rows
 
 Operator follow-up (not executed by this script):
-  C:/Users/hossa/dev/vantage/.venv-dqx/Scripts/python.exe scripts/dqx_bronze_gate.py \
+  .venv-dqx/Scripts/python.exe scripts/dqx_bronze_gate.py \
       --data <twin-dest> --json <out.json>
   Expected: exit 1; JSON check named <expected_gate_check> has outcome "fail" and
   bad == count_planted; the other sub checks have outcome "pass";
   num_value_not_null reports its real baseline at outcome "warn" (non-gating).
 
 Usage:
-  C:/Users/hossa/dev/vantage/.venv-dqx/Scripts/python.exe scripts/dqx_gate_mutate_twin.py \
+  .venv-dqx/Scripts/python.exe scripts/dqx_gate_mutate_twin.py \
       --data <path> --twin-dest <path> [--column cik] [--count 5] [--seed 42] \
       [--manifest <out.json>]
 """
@@ -137,7 +137,7 @@ def main() -> int:
     print(f"dqx_gate_mutate_twin data={data.as_posix()} twin_dest={twin_dest.as_posix()} "
           f"column={args.column} planted={args.count} outcome=MUTATED exit=0")
     print("Operator follow-up: "
-          "C:/Users/hossa/dev/vantage/.venv-dqx/Scripts/python.exe "
+          ".venv-dqx/Scripts/python.exe "
           f"scripts/dqx_bronze_gate.py --data {twin_dest.as_posix()} --json <out.json>")
     if args.manifest:
         Path(args.manifest).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
