@@ -24,8 +24,9 @@ code sticks to the surface both runtimes provide: Delta operations go through SQ
 is plain DataFrame aggregations (no Deequ, no `io.delta.tables`, no
 `SparkContext`).
 
-Requires **JDK 17** (Temurin; a Spark-3.5-incompatible system JDK is a known trap)
-and Spark 3.5's Hadoop runtime. On Windows, set `HADOOP_HOME` to a directory
+Runs on **JDK 21** (Temurin; ruled 2026-11-03). The suite's pass on 21 rides on the four `--add-opens`
+flags under `Test / javaOptions` at `build.sbt:45-48`; without them Spark 3.5 fails with
+`IllegalAccessError`. Also needs Spark 3.5's Hadoop runtime. On Windows, set `HADOOP_HOME` to a directory
 containing `winutils.exe` + `hadoop.dll`, and prefix every sbt call (env is
 per-invocation):
 

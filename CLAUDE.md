@@ -30,8 +30,10 @@ clonable, not committed. `lake-backfill/` is the full-history lake;
 
 ## Build & test
 
-Requires **JDK 17** (Temurin 17; the system JDK is Spark-3.5-incompatible) and Spark's
-Hadoop runtime. On Windows, `winutils.exe` + `hadoop.dll` must be on `HADOOP_HOME`.
+Runs on **JDK 21** (Temurin; ruled 2026-11-03 after 40/40 on a clean clone). The pass rides on the
+four `--add-opens` flags under `Test / javaOptions` at `build.sbt:45-48` (`java.lang`, `java.nio`,
+`sun.nio.ch`, `java.util`): without them Spark 3.5 fails on 21 with `IllegalAccessError`.
+Also needs Spark's Hadoop runtime. On Windows, `winutils.exe` + `hadoop.dll` must be on `HADOOP_HOME`.
 
 - **Windows (PowerShell)** — env is per-invocation, so prefix every sbt call:
   ```powershell
@@ -73,8 +75,7 @@ cross-checks against the logs (exit 0 = match). It's the tool to re-derive any n
 ## Hard rules
 
 - **Git-guard: never write history.** Emit commit commands for the operator to run
-  (grouped by repo, Git Bash / POSIX paths); do not `git commit`/`push`. `databricks.yml`
-  carries a pre-session uncommitted modification left to the operator — don't fold it in.
+  (grouped by repo, Git Bash / POSIX paths); do not `git commit`/`push`.
 - **Gate-green ≠ data-correct.** Verify effects by probing gold tables / registry rows,
   never an exit log.
 - **Uniqueness is measured, not assumed.** A natural-key collision is a finding to surface
