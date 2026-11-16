@@ -112,3 +112,9 @@ three-outcome fail-closed — green / red / unevaluable-halts), `gate_b_mutate_t
 (seeds the known-bad twin that proves the audit can go red), `gate_b_probe.py`
 (consumer-path as-of probe with negative control), `gate_b_refute_workflow.mjs`
 (the adversarial verification fan-out over the evidence).
+
+Kafka replay (WS3, test scope): `pit.tools.KafkaReplayMain` replays one quarter's
+`num.txt` onto a topic and `pit.tools.KafkaLandingMain` drains it into bronze, then
+runs the silver stage and one gold rebuild (both via `sbt "Test/runMain ..."`; broker
+in `orchestration/kafka/`). `stream_equivalence.py` compares the stream-fed lake with
+a file-fed lake of the same quarter (green / red / unevaluable-halts).
