@@ -1,0 +1,22 @@
+# VANTAGE WS3 -- one KRaft broker for the bounded Kafka replay (see
+# docs/adr/0003-kafka-ingest-route.md). The apache/kafka image starts a
+# combined broker+controller with its stock config when no KAFKA_* variable
+# is set, advertising PLAINTEXT://localhost:9092 -- which is why the host
+# port is fixed at 9092 and bound to loopback only. No bind mounts and no
+# named volume: topic data lives in the container and is gone on `down`,
+# which is what a scratch replay wants.
+name: vantage-kafka
+
+services:
+  kafka:
+    image: ${VANTAGE_KAFKA_IMAGE:-apache/kafka:3.9.1}
+    ports:
+      - "127.0.0.1:9092:9092"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
